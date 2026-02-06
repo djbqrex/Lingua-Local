@@ -221,18 +221,21 @@ A conversational language learning tool powered by local AI models for speech-to
 - [ ] Keyboard shortcuts
 - [ ] Settings persistence
 
-## 🚀 Getting Started (Planned)
+## 🚀 Getting Started
 
 ### Quick Start
-```bash
-# Clone repository
-git clone <repo-url>
-cd local-language-learning-assistant
 
-# Start with docker-compose
+See **[QUICKSTART.md](QUICKSTART.md)** for a 5-minute setup guide!
+
+**TL;DR:**
+```bash
+# 1. Download models
+python3 scripts/download_models.py
+
+# 2. Start the application
 docker-compose up
 
-# Access web interface
+# 3. Open browser
 open http://localhost:8080
 ```
 

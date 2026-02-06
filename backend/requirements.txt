@@ -13,12 +13,16 @@ piper-tts==1.2.0
 numpy==1.26.3
 soundfile==0.12.1
 pydub==0.25.1
+scipy==1.11.4
 
 # Utilities
 python-dotenv==1.0.0
 aiofiles==23.2.1
 requests==2.31.0
 tqdm==4.66.1
+
+# Optional - for GPU detection (will fallback if not available)
+# torch>=2.0.0  # Uncomment for automatic GPU detection
 
 # Development
 pytest==7.4.4

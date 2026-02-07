@@ -87,12 +87,15 @@ export class API {
     /**
      * Synthesize speech from text
      */
-    static async synthesizeSpeech(text, language, voice = null) {
+    static async synthesizeSpeech(text, language, voice = null, speechRate = null) {
         const formData = new FormData();
         formData.append('text', text);
         formData.append('language', language);
         if (voice) {
             formData.append('voice', voice);
+        }
+        if (speechRate !== null && speechRate !== undefined) {
+            formData.append('speech_rate', speechRate.toString());
         }
 
         const response = await fetch(`${API_BASE}/conversation/synthesize`, {

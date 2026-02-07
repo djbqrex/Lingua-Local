@@ -167,7 +167,8 @@ async def transcribe_audio(
 async def synthesize_speech(
     text: str = Form(...),
     language: str = Form("en"),
-    voice: Optional[str] = Form(None)
+    voice: Optional[str] = Form(None),
+    speech_rate: Optional[float] = Form(None)
 ):
     """
     Synthesize speech from text.
@@ -195,7 +196,7 @@ async def synthesize_speech(
             tts_handler.set_voice(voice)
         
         # Synthesize
-        audio_data = tts_handler.synthesize(text)
+        audio_data = tts_handler.synthesize(text, length_scale=speech_rate)
         
         return Response(
             content=audio_data,
@@ -246,8 +247,8 @@ async def speak_and_respond(
             temp_path = temp_file.name
         
         try:
-            # Transcribe user's speech
-            whisper_lang = LanguageHelper.get_whisper_code(language)
+            # Transcribe user's speech (auto-detect input language to avoid forced translation)
+            whisper_lang = None
             transcription = stt_handler.transcribe(
                 audio_path=temp_path,
                 language=whisper_lang

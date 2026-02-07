@@ -73,13 +73,19 @@ class TTSHandler:
             logger.error(f"Failed to download voice {voice}: {e}")
             return False
 
-    def synthesize(self, text: str, output_path: Optional[str] = None) -> bytes:
+    def synthesize(
+        self,
+        text: str,
+        output_path: Optional[str] = None,
+        length_scale: Optional[float] = None
+    ) -> bytes:
         """
         Synthesize speech from text.
 
         Args:
             text: Text to synthesize
             output_path: Optional path to save audio file
+            length_scale: Optional Piper length scale (higher = slower)
 
         Returns:
             Audio data as bytes (WAV format)
@@ -116,6 +122,8 @@ class TTSHandler:
                 "--model", str(model_path),
                 "--output_file", output_path
             ]
+            if length_scale and length_scale > 0:
+                cmd.extend(["--length_scale", f"{length_scale:.2f}"])
             
             result = subprocess.run(
                 cmd,
@@ -134,19 +142,20 @@ class TTSHandler:
         except subprocess.CalledProcessError as e:
             logger.error(f"Piper synthesis failed: {e}")
             # Fallback to simple audio
-            return self._generate_fallback_audio(text)
+            return self._generate_fallback_audio(text, length_scale)
         except Exception as e:
             logger.error(f"TTS synthesis failed: {e}")
-            return self._generate_fallback_audio(text)
+            return self._generate_fallback_audio(text, length_scale)
 
-    def _generate_fallback_audio(self, text: str) -> bytes:
+    def _generate_fallback_audio(self, text: str, length_scale: Optional[float] = None) -> bytes:
         """Generate a simple fallback audio (silence) for testing."""
         import numpy as np
         import soundfile as sf
         
         # Generate an audible sine tone as fallback
         sample_rate = 22050
-        duration = max(0.5, len(text) * 0.08)  # Approximate duration
+        scale = length_scale if length_scale and length_scale > 0 else 1.0
+        duration = max(0.5, len(text) * 0.08 * scale)  # Approximate duration
         samples = int(sample_rate * duration)
 
         t = np.linspace(0, duration, samples, endpoint=False)

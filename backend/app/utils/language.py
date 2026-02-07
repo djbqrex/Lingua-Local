@@ -157,6 +157,22 @@ class LanguageHelper:
         language_name = cls.get_language_name(language)
         scenario_desc = cls.get_scenario_description(scenario)
         
+        if difficulty == "beginner":
+            balance_guidance = (
+                "For beginners, respond mostly in English (about 70-80%). "
+                f"Include short {language_name} phrases or a single sentence with an English translation."
+            )
+        elif difficulty == "intermediate":
+            balance_guidance = (
+                f"Use a balanced mix of {language_name} and English explanations. "
+                f"Provide translations for new phrases."
+            )
+        else:
+            balance_guidance = (
+                f"Respond primarily in {language_name}. "
+                "Only use brief English explanations when asked or to clarify mistakes."
+            )
+
         prompt = f"""You are a helpful language learning assistant. You are helping a user learn {language_name} for travel purposes.
 
 Your role is to:
@@ -168,7 +184,10 @@ Your role is to:
 
 Current scenario: {scenario_desc}
 
-Respond naturally in {language_name}. Keep responses to 1-3 sentences unless asked for more detail."""
+Beginner-friendly guidance:
+- {balance_guidance}
+- If the user speaks English, acknowledge in English and then provide the {language_name} version.
+- Keep responses to 1-3 sentences unless asked for more detail."""
 
         return prompt
 

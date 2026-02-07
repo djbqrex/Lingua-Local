@@ -1,6 +1,7 @@
 """Language Model handler using llama.cpp."""
 
 import logging
+import time
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -52,7 +53,18 @@ class LLMHandler:
             
             # Use the first GGUF file found
             model_path = model_files[0]
-            logger.info(f"Loading LLM model: {model_path}")
+            model_size_mb = model_path.stat().st_size / (1024 * 1024)
+            logger.info(
+                "Preparing to load LLM model: %s (%.1f MB)",
+                model_path,
+                model_size_mb
+            )
+            logger.info(
+                "Loading LLM model into llama.cpp (ctx=%s, gpu_layers=%s)",
+                self.n_ctx,
+                self.n_gpu_layers
+            )
+            start_time = time.perf_counter()
             
             self.model = Llama(
                 model_path=str(model_path),
@@ -61,7 +73,12 @@ class LLMHandler:
                 verbose=False
             )
             
-            logger.info(f"LLM model loaded successfully: {model_path.name}")
+            elapsed = time.perf_counter() - start_time
+            logger.info(
+                "LLM model loaded successfully in %.2fs: %s",
+                elapsed,
+                model_path.name
+            )
             
         except ImportError:
             logger.error("llama-cpp-python not installed")

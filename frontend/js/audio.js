@@ -23,6 +23,28 @@ export class AudioRecorder {
      */
     async initialize() {
         try {
+            // Check if we're in a secure context (HTTPS or localhost)
+            const isSecureContext = window.location.protocol === 'https:' || 
+                                 window.location.hostname === 'localhost' || 
+                                 window.location.hostname === '127.0.0.1';
+            
+            if (!isSecureContext) {
+                const errorMsg = 'Microphone access requires HTTPS when accessing via IP address.\n\n' +
+                    'Solutions:\n' +
+                    '1. Use HTTPS (https://your-ip:8080) - see setup instructions\n' +
+                    '2. Check browser settings: Settings > Site Settings > Microphone\n' +
+                    '3. Try accessing via localhost if on the same device';
+                alert(errorMsg);
+                console.error('Insecure context detected. Microphone access blocked:', window.location.href);
+                return false;
+            }
+
+            // Check if getUserMedia is available
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert('Microphone access is not supported in this browser.');
+                return false;
+            }
+
             this.stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
                     channelCount: 1,
@@ -34,7 +56,25 @@ export class AudioRecorder {
             return true;
         } catch (error) {
             console.error('Failed to initialize audio:', error);
-            alert('Microphone access denied. Please allow microphone access to use voice input.');
+            
+            let errorMsg = 'Microphone access denied. ';
+            
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                errorMsg += 'Please allow microphone access in your browser settings.\n\n' +
+                    'On Android:\n' +
+                    '1. Tap the lock/info icon in the address bar\n' +
+                    '2. Select "Site settings"\n' +
+                    '3. Enable "Microphone"\n' +
+                    '4. Refresh the page';
+            } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                errorMsg += 'No microphone found. Please connect a microphone and try again.';
+            } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+                errorMsg += 'Microphone is in use by another application. Please close other apps using the microphone.';
+            } else {
+                errorMsg += `Error: ${error.message || error.name || 'Unknown error'}`;
+            }
+            
+            alert(errorMsg);
             return false;
         }
     }

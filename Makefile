@@ -12,7 +12,9 @@ help:
 	@echo "  make download-models - Download all required models"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make build          - Build Docker images"
+	@echo "  make build-image    - Build and tag Docker image (CPU) - run once"
+	@echo "  make build-image-gpu - Build and tag Docker image (GPU) - run once"
+	@echo "  make build          - Build Docker images via docker-compose"
 	@echo "  make up             - Start application (CPU)"
 	@echo "  make up-gpu         - Start application (GPU)"
 	@echo "  make down           - Stop application"
@@ -56,6 +58,19 @@ build:
 	@echo "Building Docker image..."
 	docker-compose build
 	@echo "✓ Docker image built"
+
+build-image:
+	@echo "Building and tagging Docker image (CPU)..."
+	docker build -t lingua-local:cpu -f backend/Dockerfile .
+	@echo "✓ Docker image built and tagged as lingua-local:cpu"
+
+build-image-gpu:
+	@echo "Building and tagging Docker image (GPU)..."
+	docker build -t lingua-local:gpu -f backend/Dockerfile.gpu .
+	@echo "✓ Docker image built and tagged as lingua-local:gpu"
+
+build-images: build-image build-image-gpu
+	@echo "✓ All Docker images built"
 
 up:
 	@echo "Starting application (CPU mode)..."

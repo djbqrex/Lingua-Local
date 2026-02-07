@@ -18,7 +18,29 @@ python3 scripts/download_models.py
 
 **Note:** This downloads ~2-3GB of models. It may take 5-30 minutes depending on your internet speed.
 
-### 2. Start the Application
+### 2. Build Docker Image (One-Time Setup)
+
+**For most users (CPU):**
+```bash
+make build-image
+```
+or manually:
+```bash
+docker build -t lingua-local:cpu -f backend/Dockerfile .
+```
+
+**For NVIDIA GPU users:**
+```bash
+make build-image-gpu
+```
+or manually:
+```bash
+docker build -t lingua-local:gpu -f backend/Dockerfile.gpu .
+```
+
+**Note:** You only need to build the image once. After that, `docker-compose up` will use the cached image and won't download packages every time.
+
+### 3. Start the Application
 
 **For most users (CPU):**
 ```bash
@@ -30,11 +52,11 @@ docker-compose up
 docker-compose -f docker-compose.gpu.yml up
 ```
 
-### 3. Open Your Browser
+### 4. Open Your Browser
 
 Navigate to: **http://localhost:8080**
 
-### 4. Start Learning!
+### 5. Start Learning!
 
 1. Select your target language (e.g., Spanish)
 2. Choose a scenario (e.g., Restaurant)

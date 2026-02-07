@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   language-assistant:
+    image: lingua-local:latest
     build:
       context: .
       dockerfile: backend/Dockerfile

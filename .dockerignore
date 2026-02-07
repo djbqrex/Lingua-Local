@@ -5,58 +5,54 @@
 
 # Python
 __pycache__
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
+*.so
+*.egg
 *.egg-info
 dist
 build
-venv
-env
+.pytest_cache
+.coverage
+htmlcov
+
+# Virtual environments
+venv/
+env/
+ENV/
 .venv
 
-# Models (too large, should be mounted as volume)
-models/
-*.bin
-*.gguf
-*.safetensors
-*.pth
-*.pt
-*.onnx
-
-# Environment
-.env
-.env.local
-
-# IDEs
-.vscode
-.idea
+# IDE
+.vscode/
+.idea/
 *.swp
 *.swo
-
-# Logs
-*.log
-logs/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Documentation (not needed in container)
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Documentation
 *.md
-docs/
+LICENSE
 
-# CI/CD
-.github
-.gitlab-ci.yml
+# Scripts (not needed in image)
+scripts/
 
-# Testing
-.pytest_cache
-htmlcov
-.coverage
+# Models (mounted as volume)
+models/
+
+# Temporary files
+tmp/
+*.log
+
+# Makefile
+Makefile

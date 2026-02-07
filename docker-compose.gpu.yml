@@ -2,11 +2,10 @@ version: '3.8'
 
 services:
   language-assistant:
+    image: lingua-local:gpu
     build:
       context: .
-      dockerfile: backend/Dockerfile
-      args:
-        USE_GPU: "true"
+      dockerfile: backend/Dockerfile.gpu
     container_name: language-learning-assistant-gpu
     ports:
       - "8080:8000"

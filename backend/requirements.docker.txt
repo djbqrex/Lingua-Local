@@ -1,3 +1,10 @@
+# Docker-specific requirements
+# This file is used in Dockerfile to install all dependencies except pydub
+# 
+# Notes:
+# - pydub is installed separately with --no-deps (doesn't need av, just ffmpeg CLI)
+# - av version is constrained to >=13.0.0 in Dockerfile (faster-whisper wants 11.* but it doesn't build)
+#
 # Web Framework
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
@@ -12,8 +19,8 @@ piper-tts==1.2.0
 # Audio Processing
 numpy==1.26.3
 soundfile==0.12.1
-# pydub==0.25.1  # Installed separately in Dockerfile to avoid av dependency
 scipy==1.11.4
+# NOTE: pydub is installed separately in Dockerfile
 
 # Utilities
 python-dotenv==1.0.0
@@ -21,9 +28,7 @@ aiofiles==23.2.1
 requests==2.31.0
 tqdm==4.66.1
 
-# Optional - for GPU detection (will fallback if not available)
-# torch>=2.0.0  # Uncomment for automatic GPU detection
-
 # Development
 pytest==7.4.4
 pytest-asyncio==0.23.3
+

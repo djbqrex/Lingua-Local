@@ -1,20 +1,20 @@
 /* CSS Variables */
 :root {
-    --primary-color: #4A90E2;
-    --primary-dark: #357ABD;
-    --secondary-color: #50C878;
-    --danger-color: #E74C3C;
-    --background: #F5F7FA;
-    --surface: #FFFFFF;
-    --text-primary: #2C3E50;
-    --text-secondary: #7F8C8D;
-    --border: #E1E8ED;
-    --shadow: rgba(0, 0, 0, 0.1);
-    --shadow-hover: rgba(0, 0, 0, 0.15);
+    --primary-color: #6AA9FF;
+    --primary-dark: #3C6FBF;
+    --secondary-color: #49C17A;
+    --danger-color: #FF6B6B;
+    --background: #0F1115;
+    --surface: #161B24;
+    --text-primary: #E6E9EF;
+    --text-secondary: #9AA3B2;
+    --border: #2A3140;
+    --shadow: rgba(0, 0, 0, 0.35);
+    --shadow-hover: rgba(0, 0, 0, 0.5);
     --success: #27AE60;
     --warning: #F39C12;
-    --user-message: #E3F2FD;
-    --assistant-message: #F5F5F5;
+    --user-message: #1B2A3D;
+    --assistant-message: #1A1F2A;
 }
 
 /* Reset and Base Styles */
@@ -47,12 +47,15 @@ body {
 
 /* Header */
 .header {
-    text-align: center;
+    text-align: left;
     margin-bottom: 30px;
     padding: 20px;
     background: var(--surface);
     border-radius: 12px;
     box-shadow: 0 2px 8px var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .header h1 {
@@ -64,6 +67,10 @@ body {
 .subtitle {
     color: var(--text-secondary);
     font-size: 1.1rem;
+}
+
+.subtitle.secondary {
+    font-size: 0.95rem;
 }
 
 /* Settings Panel */

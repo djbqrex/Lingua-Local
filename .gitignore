@@ -77,3 +77,7 @@ logs/
 # OS
 Thumbs.db
 .DS_Store
+
+# Certs
+192.168.1.174+4-key.pem
+192.168.1.174+4.pem

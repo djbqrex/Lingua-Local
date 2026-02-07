@@ -19,6 +19,8 @@ class LanguageLearningApp {
         this.statusIndicator = document.getElementById('status-indicator');
         this.recordingIndicator = document.getElementById('recording-indicator');
         this.audioPlayer = document.getElementById('audio-player');
+        this.continuousToggle = document.getElementById('continuous-toggle');
+        this.recordBtnText = this.recordBtn.querySelector('.btn-text');
 
         // Model status badges
         this.modelStatusSTT = document.getElementById('model-status-stt');
@@ -32,6 +34,11 @@ class LanguageLearningApp {
         // Conversation state
         this.messages = [];
         this.sessionId = this.generateSessionId();
+        this.continuousListening = false;
+        this.continuousStopTimer = null;
+        this.continuousRestartTimer = null;
+        this.continuousMaxRecordingMs = 10000;
+        this.continuousRestartDelayMs = 400;
 
         // Initialize
         this.init();
@@ -42,6 +49,7 @@ class LanguageLearningApp {
      */
     async init() {
         this.setupEventListeners();
+        this.updateRecordButtonText();
         await this.checkModelsStatus();
         this.updateStatus('Ready to practice!', 'success');
     }
@@ -51,21 +59,33 @@ class LanguageLearningApp {
      */
     setupEventListeners() {
         // Record button - hold to speak
-        this.recordBtn.addEventListener('mousedown', () => this.startRecording());
-        this.recordBtn.addEventListener('mouseup', () => this.stopRecording());
+        this.recordBtn.addEventListener('mousedown', () => {
+            if (this.isContinuousModeEnabled()) return;
+            this.startRecording();
+        });
+        this.recordBtn.addEventListener('mouseup', () => {
+            if (this.isContinuousModeEnabled()) return;
+            this.stopRecording();
+        });
         this.recordBtn.addEventListener('mouseleave', () => {
-            if (this.recorder.getIsRecording()) {
+            if (!this.isContinuousModeEnabled() && this.recorder.getIsRecording()) {
                 this.stopRecording();
             }
+        });
+        this.recordBtn.addEventListener('click', () => {
+            if (!this.isContinuousModeEnabled()) return;
+            this.toggleContinuousListening();
         });
 
         // Touch events for mobile
         this.recordBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
+            if (this.isContinuousModeEnabled()) return;
             this.startRecording();
         });
         this.recordBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
+            if (this.isContinuousModeEnabled()) return;
             this.stopRecording();
         });
 
@@ -81,6 +101,10 @@ class LanguageLearningApp {
 
         // Clear history button
         this.clearHistoryBtn.addEventListener('click', () => this.clearHistory());
+
+        if (this.continuousToggle) {
+            this.continuousToggle.addEventListener('change', () => this.handleContinuousToggle());
+        }
     }
 
     /**
@@ -150,14 +174,121 @@ class LanguageLearningApp {
     }
 
     /**
+     * Check if continuous listening mode is enabled
+     */
+    isContinuousModeEnabled() {
+        return !!this.continuousToggle && this.continuousToggle.checked;
+    }
+
+    /**
+     * Handle changes to continuous listening toggle
+     */
+    handleContinuousToggle() {
+        if (!this.isContinuousModeEnabled()) {
+            this.continuousListening = false;
+            this.clearContinuousTimers();
+            this.updateRecordButtonText();
+            if (this.recorder.getIsRecording()) {
+                this.stopRecording();
+            }
+            this.updateStatus('Ready', 'success');
+            return;
+        }
+
+        this.updateRecordButtonText();
+        this.updateStatus('Continuous listening ready', 'info');
+    }
+
+    /**
+     * Toggle continuous listening on/off
+     */
+    toggleContinuousListening() {
+        if (this.continuousListening) {
+            this.continuousListening = false;
+            this.updateRecordButtonText();
+            if (this.recorder.getIsRecording()) {
+                this.stopRecording();
+            } else {
+                this.updateStatus('Continuous listening stopped', 'info');
+            }
+            return;
+        }
+
+        this.continuousListening = true;
+        this.updateRecordButtonText();
+        this.updateStatus('Listening...', 'info');
+        this.startRecording(true);
+    }
+
+    /**
+     * Update record button label based on current mode
+     */
+    updateRecordButtonText() {
+        if (!this.recordBtnText) return;
+
+        if (this.isContinuousModeEnabled()) {
+            this.recordBtnText.textContent = this.continuousListening ? 'Stop Listening' : 'Start Listening';
+            this.recordBtn.title = this.continuousListening ? 'Stop listening' : 'Start listening';
+        } else {
+            this.recordBtnText.textContent = 'Hold to Speak';
+            this.recordBtn.title = 'Hold to record';
+        }
+    }
+
+    /**
+     * Schedule auto-stop for continuous listening chunk
+     */
+    scheduleContinuousStop() {
+        this.clearContinuousTimers();
+        this.continuousStopTimer = setTimeout(() => {
+            if (this.recorder.getIsRecording()) {
+                this.stopRecording();
+            }
+        }, this.continuousMaxRecordingMs);
+    }
+
+    /**
+     * Clear continuous listening timers
+     */
+    clearContinuousTimers() {
+        if (this.continuousStopTimer) {
+            clearTimeout(this.continuousStopTimer);
+            this.continuousStopTimer = null;
+        }
+        if (this.continuousRestartTimer) {
+            clearTimeout(this.continuousRestartTimer);
+            this.continuousRestartTimer = null;
+        }
+    }
+
+    /**
+     * Resume continuous listening after processing
+     */
+    maybeResumeContinuousListening() {
+        if (!this.isContinuousModeEnabled() || !this.continuousListening) return;
+        if (this.recorder.getIsRecording()) return;
+
+        this.continuousRestartTimer = setTimeout(() => {
+            if (this.isContinuousModeEnabled() && this.continuousListening) {
+                this.startRecording(true);
+            }
+        }, this.continuousRestartDelayMs);
+    }
+
+    /**
      * Start recording audio
      */
-    async startRecording() {
+    async startRecording(fromContinuous = false) {
+        if (this.recorder.getIsRecording()) return;
+
         const started = await this.recorder.startRecording();
         if (started) {
             this.recordBtn.classList.add('recording');
             this.recordingIndicator.style.display = 'flex';
             this.updateStatus('Recording...', 'error');
+            if (fromContinuous) {
+                this.scheduleContinuousStop();
+            }
         }
     }
 
@@ -167,6 +298,7 @@ class LanguageLearningApp {
     async stopRecording() {
         if (!this.recorder.getIsRecording()) return;
 
+        this.clearContinuousTimers();
         this.recordBtn.classList.remove('recording');
         this.recordingIndicator.style.display = 'none';
         this.updateStatus('Processing...', 'info');
@@ -176,6 +308,7 @@ class LanguageLearningApp {
             
             if (!audioBlob || audioBlob.size === 0) {
                 this.updateStatus('Recording too short', 'warning');
+                this.maybeResumeContinuousListening();
                 return;
             }
 
@@ -184,6 +317,7 @@ class LanguageLearningApp {
         } catch (error) {
             console.error('Recording error:', error);
             this.updateStatus('Recording failed', 'error');
+            this.maybeResumeContinuousListening();
         }
     }
 
@@ -223,6 +357,7 @@ class LanguageLearningApp {
             this.updateStatus('Error processing voice', 'error');
         } finally {
             this.enableInputs();
+            this.maybeResumeContinuousListening();
         }
     }
 

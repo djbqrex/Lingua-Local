@@ -112,6 +112,58 @@ body {
     border-color: var(--primary-color);
 }
 
+.setting-toggle {
+    max-width: 220px;
+}
+
+.setting-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.toggle {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+}
+
+.toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: var(--border);
+    transition: 0.2s ease;
+    border-radius: 999px;
+}
+
+.toggle-slider::after {
+    content: "";
+    position: absolute;
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    top: 3px;
+    background: var(--surface);
+    transition: 0.2s ease;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px var(--shadow);
+}
+
+.toggle input:checked + .toggle-slider {
+    background: var(--primary-color);
+}
+
+.toggle input:checked + .toggle-slider::after {
+    transform: translateX(22px);
+}
+
 /* Status Indicator */
 .status-indicator {
     display: flex;

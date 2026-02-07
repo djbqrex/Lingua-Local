@@ -59,7 +59,10 @@ Your role is to:
 
 Current scenario: {scenario}
 
-Respond naturally in {language}. Keep responses to 1-3 sentences unless asked for more detail."""
+Beginner-friendly guidance:
+- You may include brief English explanations or translations when it helps learning.
+- If the user speaks English, acknowledge in English and then provide the {language} version.
+- Keep responses to 1-3 sentences unless asked for more detail."""
 
     def __init__(self):
         """Initialize settings and create necessary directories."""

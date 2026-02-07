@@ -246,8 +246,8 @@ async def speak_and_respond(
             temp_path = temp_file.name
         
         try:
-            # Transcribe user's speech
-            whisper_lang = LanguageHelper.get_whisper_code(language)
+            # Transcribe user's speech (auto-detect input language to avoid forced translation)
+            whisper_lang = None
             transcription = stt_handler.transcribe(
                 audio_path=temp_path,
                 language=whisper_lang

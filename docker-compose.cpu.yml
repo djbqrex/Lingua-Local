@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  language-assistant:
+    image: lingua-local:cpu
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        USE_GPU: "false"
+    container_name: language-learning-assistant-cpu
+    ports:
+      - "8080:8000"
+    volumes:
+      - ./models:/app/models
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      - ./tmp:/app/tmp
+    environment:
+      # Hardware - CPU only
+      - DEVICE=cpu
+      - COMPUTE_TYPE=int8
+      
+      # Models - optimized for CPU
+      - STT_MODEL=base
+      - LLM_MODEL=qwen2.5-1.5b-instruct
+      - TTS_VOICE=en_US-lessac-medium
+      
+      # Languages
+      - SUPPORTED_LANGUAGES=en,es,fr,de,it,pt,ja,zh,ko,ar
+      
+      # Performance
+      - MAX_AUDIO_LENGTH=30
+      - STREAM_AUDIO=true
+      - CACHE_MODELS=true
+      
+      # API
+      - HOST=0.0.0.0
+      - PORT=8000
+      - CORS_ORIGINS=http://localhost:8080,http://127.0.0.1:8080
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Resource limits for CPU-only deployment
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 6G
+        reservations:
+          cpus: '4'
+          memory: 4G
+
+volumes:
+  models:
+    driver: local

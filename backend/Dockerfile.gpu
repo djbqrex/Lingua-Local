@@ -1,0 +1,70 @@
+# GPU Dockerfile for Language Learning Assistant
+
+# Base image with CUDA support
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+# Install Python
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    PYTHONPATH=/app
+
+# Install system dependencies including FFmpeg dev libraries
+# faster-whisper requires av (PyAV) which needs FFmpeg development libraries
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    ffmpeg \
+    libsndfile1 \
+    pkg-config \
+    libavformat-dev \
+    libavcodec-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    libavfilter-dev \
+    libswscale-dev \
+    libswresample-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY backend/requirements.docker.txt ./requirements.txt
+
+# Install Python dependencies
+# faster-whisper 1.0.3+ uses av>=13.0.0 which builds correctly with modern FFmpeg
+# pydub is installed separately with --no-deps (doesn't need av, just ffmpeg CLI)
+RUN pip3 install --upgrade pip setuptools wheel && \
+    pip3 install --prefer-binary -r requirements.txt && \
+    pip3 install pydub==0.25.1 --no-deps
+
+# Copy application code
+COPY backend /app/backend
+
+# Create directories for models and temp files
+RUN mkdir -p /app/models/stt /app/models/tts /app/models/llm /app/tmp
+
+# Copy frontend
+COPY frontend /app/frontend
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+# Run the application
+CMD ["python3", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+

@@ -20,6 +20,7 @@ class LanguageLearningApp {
         this.recordingIndicator = document.getElementById('recording-indicator');
         this.audioPlayer = document.getElementById('audio-player');
         this.continuousToggle = document.getElementById('continuous-toggle');
+        this.speechRateToggle = document.getElementById('speech-rate-toggle');
         this.recordBtnText = this.recordBtn.querySelector('.btn-text');
 
         // Model status badges
@@ -39,6 +40,8 @@ class LanguageLearningApp {
         this.continuousRestartTimer = null;
         this.continuousMaxRecordingMs = 10000;
         this.continuousRestartDelayMs = 400;
+        this.continuousSilenceDurationMs = 900;
+        this.continuousSilenceThreshold = 0.02;
 
         // Initialize
         this.init();
@@ -195,8 +198,10 @@ class LanguageLearningApp {
             return;
         }
 
+        this.continuousListening = true;
         this.updateRecordButtonText();
-        this.updateStatus('Continuous listening ready', 'info');
+        this.updateStatus('Listening...', 'info');
+        this.startRecording(true);
     }
 
     /**
@@ -276,12 +281,33 @@ class LanguageLearningApp {
     }
 
     /**
+     * Determine speech rate for TTS
+     */
+    getSpeechRate() {
+        if (!this.speechRateToggle) return 1.0;
+        return this.speechRateToggle.checked ? 1.2 : 1.0;
+    }
+
+    /**
      * Start recording audio
      */
     async startRecording(fromContinuous = false) {
         if (this.recorder.getIsRecording()) return;
 
-        const started = await this.recorder.startRecording();
+        if (this.player.getIsPlaying()) {
+            this.player.stop();
+        }
+
+        const started = await this.recorder.startRecording({
+            enableSilenceDetection: fromContinuous,
+            silenceDurationMs: this.continuousSilenceDurationMs,
+            silenceThreshold: this.continuousSilenceThreshold,
+            onSilence: () => {
+                if (this.continuousListening) {
+                    this.stopRecording();
+                }
+            }
+        });
         if (started) {
             this.recordBtn.classList.add('recording');
             this.recordingIndicator.style.display = 'flex';
@@ -411,7 +437,8 @@ class LanguageLearningApp {
      */
     async speakText(text, language) {
         try {
-            const audioBlob = await API.synthesizeSpeech(text, language);
+            const speechRate = this.getSpeechRate();
+            const audioBlob = await API.synthesizeSpeech(text, language, null, speechRate);
             await this.player.play(audioBlob);
         } catch (error) {
             console.error('Speech synthesis error:', error);

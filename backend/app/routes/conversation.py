@@ -167,7 +167,8 @@ async def transcribe_audio(
 async def synthesize_speech(
     text: str = Form(...),
     language: str = Form("en"),
-    voice: Optional[str] = Form(None)
+    voice: Optional[str] = Form(None),
+    speech_rate: Optional[float] = Form(None)
 ):
     """
     Synthesize speech from text.
@@ -195,7 +196,7 @@ async def synthesize_speech(
             tts_handler.set_voice(voice)
         
         # Synthesize
-        audio_data = tts_handler.synthesize(text)
+        audio_data = tts_handler.synthesize(text, length_scale=speech_rate)
         
         return Response(
             content=audio_data,

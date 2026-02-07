@@ -6,6 +6,7 @@
     --danger-color: #FF6B6B;
     --background: #0F1115;
     --surface: #161B24;
+    --surface-muted: #101520;
     --text-primary: #E6E9EF;
     --text-secondary: #9AA3B2;
     --border: #2A3140;
@@ -105,9 +106,15 @@ body {
     border: 2px solid var(--border);
     border-radius: 8px;
     font-size: 1rem;
-    background: var(--surface);
+    background: var(--surface-muted);
+    color: var(--text-primary);
     cursor: pointer;
     transition: border-color 0.3s ease;
+}
+
+.setting-group select option {
+    background: var(--surface);
+    color: var(--text-primary);
 }
 
 .setting-group select:hover {
@@ -350,12 +357,18 @@ body {
     border: 2px solid var(--border);
     border-radius: 8px;
     font-size: 1rem;
+    background: var(--surface-muted);
+    color: var(--text-primary);
     transition: border-color 0.3s ease;
 }
 
 .text-input:focus {
     outline: none;
     border-color: var(--primary-color);
+}
+
+.text-input::placeholder {
+    color: var(--text-secondary);
 }
 
 .btn-send {

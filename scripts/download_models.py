@@ -74,18 +74,48 @@ class ModelDownloader:
         """Download Piper TTS voice model."""
         print(f"\n📥 Downloading Piper voice: {voice}...")
 
-        # Piper models are hosted on GitHub releases
-        base_url = "https://github.com/rhasspy/piper/releases/download/v1.2.0"
-        
+        # Piper voices are hosted on Hugging Face; GitHub releases are fallback
+        hf_base = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+        github_bases = [
+            "https://github.com/rhasspy/piper/releases/download/v1.2.0",
+            "https://github.com/rhasspy/piper/releases/download/v1.1.1",
+            "https://github.com/rhasspy/piper/releases/download/v1.1.0"
+        ]
+
         model_file = f"{voice}.onnx"
         config_file = f"{voice}.onnx.json"
 
+        # Build Hugging Face URLs
+        hf_model_url = None
+        hf_config_url = None
+        try:
+            parts = voice.split("-")
+            if len(parts) < 3:
+                raise ValueError("Invalid voice format")
+            locale = parts[0]
+            quality = parts[-1]
+            voice_name = "-".join(parts[1:-1])
+            language = locale.split("_")[0]
+            hf_prefix = f"{hf_base}/{language}/{locale}/{voice_name}/{quality}"
+            hf_model_url = f"{hf_prefix}/{model_file}"
+            hf_config_url = f"{hf_prefix}/{config_file}"
+        except Exception as e:
+            print(f"⚠ Could not parse voice for Hugging Face URLs: {e}")
+
         # Download model file
-        model_url = f"{base_url}/{model_file}"
+        model_urls = []
+        if hf_model_url:
+            model_urls.append(hf_model_url)
+        model_urls.extend([f"{base}/{model_file}" for base in github_bases])
         model_path = self.tts_dir / model_file
         
         if not model_path.exists():
-            success = self.download_file(model_url, model_path, f"Piper model {voice}")
+            success = False
+            for model_url in model_urls:
+                print(f"Trying URL: {model_url}")
+                if self.download_file(model_url, model_path, f"Piper model {voice}"):
+                    success = True
+                    break
             if not success:
                 print(f"⚠ Failed to download Piper model. Will use fallback TTS.")
                 return False
@@ -93,11 +123,19 @@ class ModelDownloader:
             print(f"✓ Model already exists: {model_file}")
 
         # Download config file
-        config_url = f"{base_url}/{config_file}"
+        config_urls = []
+        if hf_config_url:
+            config_urls.append(hf_config_url)
+        config_urls.extend([f"{base}/{config_file}" for base in github_bases])
         config_path = self.tts_dir / config_file
         
         if not config_path.exists():
-            success = self.download_file(config_url, config_path, f"Piper config {voice}")
+            success = False
+            for config_url in config_urls:
+                print(f"Trying URL: {config_url}")
+                if self.download_file(config_url, config_path, f"Piper config {voice}"):
+                    success = True
+                    break
             if not success:
                 print(f"⚠ Failed to download Piper config. Will use fallback TTS.")
                 return False

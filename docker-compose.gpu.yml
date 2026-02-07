@@ -36,6 +36,10 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - CORS_ORIGINS=http://localhost:8080,http://127.0.0.1:8080
+      
+      # Hugging Face (optional - for faster downloads)
+      # Get your token from: https://huggingface.co/settings/tokens
+      - HF_TOKEN=${HF_TOKEN:-}
     restart: unless-stopped
     # GPU configuration
     deploy:

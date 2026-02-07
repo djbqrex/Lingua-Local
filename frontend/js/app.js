@@ -207,9 +207,9 @@ class LanguageLearningApp {
                 this.sessionId
             );
 
-            // The transcription is implicit, but we show what the user said
-            // by using detected_language if available
-            this.addMessage('user', `[You spoke in ${result.detected_language || language}]`);
+            // Display the transcribed text if available, otherwise show language detection
+            const userMessage = result.transcribed_text || `[You spoke in ${result.detected_language || language}]`;
+            this.addMessage('user', userMessage);
             this.addMessage('assistant', result.response);
 
             // Synthesize and play response

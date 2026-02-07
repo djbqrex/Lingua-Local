@@ -41,9 +41,13 @@ class TTSHandler:
             model_path = self.model_dir / f"{self.voice}.onnx"
             config_path = self.model_dir / f"{self.voice}.onnx.json"
             
-            if not model_path.exists():
-                logger.warning(f"Model not found at {model_path}. Will need to download.")
-                logger.info("Piper TTS models can be downloaded from: https://github.com/rhasspy/piper/releases")
+            if not model_path.exists() or not config_path.exists():
+                logger.info(f"Model not found at {model_path}. Attempting to download...")
+                # Try to download the voice model
+                self._download_voice(self.voice)
+                # Re-check after download attempt
+                if not model_path.exists() or not config_path.exists():
+                    logger.warning(f"Model still not found after download attempt. Will use fallback.")
             
             self.voice_model = {
                 "model_path": model_path,
@@ -56,6 +60,18 @@ class TTSHandler:
         except Exception as e:
             logger.error(f"Failed to initialize Piper TTS: {e}")
             raise
+    
+    def _download_voice(self, voice: str) -> bool:
+        """Download a Piper TTS voice model."""
+        try:
+            from ..utils.model_downloader import ModelDownloader
+            # self.model_dir is models/tts, so parent is models/
+            models_dir = self.model_dir.parent
+            downloader = ModelDownloader(models_dir)
+            return downloader.download_piper_voice(voice)
+        except Exception as e:
+            logger.error(f"Failed to download voice {voice}: {e}")
+            return False
 
     def synthesize(self, text: str, output_path: Optional[str] = None) -> bytes:
         """
@@ -77,11 +93,22 @@ class TTSHandler:
                 output_path = tempfile.mktemp(suffix=".wav")
             
             model_path = self.voice_model["model_path"]
+            config_path = self.voice_model["config_path"]
             
-            if not model_path.exists():
-                # Fallback: generate simple tone for testing
-                logger.warning("Piper model not found. Using fallback audio generation.")
-                return self._generate_fallback_audio(text)
+            if not model_path.exists() or not config_path.exists():
+                # Try to download the voice model first
+                logger.info(f"Voice model {self.voice} not found. Attempting to download...")
+                if self._download_voice(self.voice):
+                    # Reload model info after download
+                    model_path = self.model_dir / f"{self.voice}.onnx"
+                    config_path = self.model_dir / f"{self.voice}.onnx.json"
+                    self.voice_model["model_path"] = model_path
+                    self.voice_model["config_path"] = config_path
+                
+                # If still not found after download attempt, use fallback
+                if not model_path.exists() or not config_path.exists():
+                    logger.warning("Piper model not found after download attempt. Using fallback audio generation.")
+                    return self._generate_fallback_audio(text)
             
             # Run piper
             cmd = [
@@ -117,13 +144,14 @@ class TTSHandler:
         import numpy as np
         import soundfile as sf
         
-        # Generate 1 second of silence as fallback
+        # Generate an audible sine tone as fallback
         sample_rate = 22050
-        duration = max(0.5, len(text) * 0.1)  # Approximate duration
+        duration = max(0.5, len(text) * 0.08)  # Approximate duration
         samples = int(sample_rate * duration)
-        
-        # Generate very quiet noise instead of complete silence
-        audio = np.random.randn(samples).astype(np.float32) * 0.001
+
+        t = np.linspace(0, duration, samples, endpoint=False)
+        frequency = 440.0  # A4 tone
+        audio = 0.15 * np.sin(2 * np.pi * frequency * t).astype(np.float32)
         
         # Write to WAV in memory
         buffer = io.BytesIO()

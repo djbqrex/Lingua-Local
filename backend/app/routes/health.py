@@ -2,7 +2,7 @@
 
 import logging
 from fastapi import APIRouter
-from typing import Dict
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ async def health_check() -> Dict[str, str]:
 
 
 @router.get("/models")
-async def models_status() -> Dict[str, any]:
+async def models_status() -> Dict[str, Any]:
     """Check status of loaded models."""
     from ..main import app
     
@@ -54,7 +54,7 @@ async def models_status() -> Dict[str, any]:
 
 
 @router.get("/languages")
-async def supported_languages() -> Dict[str, any]:
+async def supported_languages() -> Dict[str, Any]:
     """Get list of supported languages."""
     from ..utils.language import LanguageHelper
     
@@ -72,7 +72,7 @@ async def supported_languages() -> Dict[str, any]:
 
 
 @router.get("/scenarios")
-async def available_scenarios() -> Dict[str, any]:
+async def available_scenarios() -> Dict[str, Any]:
     """Get list of available conversation scenarios."""
     from ..utils.language import LanguageHelper
     

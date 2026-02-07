@@ -35,6 +35,7 @@ class ConversationResponse(BaseModel):
     response: str
     language: str
     detected_language: Optional[str] = None
+    transcribed_text: Optional[str] = None
 
 
 class TranscriptionResponse(BaseModel):
@@ -318,7 +319,8 @@ async def speak_and_respond(
             return ConversationResponse(
                 response=response_text,
                 language=language,
-                detected_language=detected_language
+                detected_language=detected_language,
+                transcribed_text=user_text
             )
             
         finally:

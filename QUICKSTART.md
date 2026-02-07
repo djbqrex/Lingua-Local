@@ -10,15 +10,7 @@ Get up and running with the Language Learning Assistant in 5 minutes!
 
 ## Steps
 
-### 1. Download Models
-
-```bash
-python3 scripts/download_models.py
-```
-
-**Note:** This downloads ~2-3GB of models. It may take 5-30 minutes depending on your internet speed.
-
-### 2. Build Docker Image (One-Time Setup)
+### 1. Build Docker Image (One-Time Setup)
 
 **For most users (CPU):**
 ```bash
@@ -40,7 +32,7 @@ docker build -t lingua-local:gpu -f backend/Dockerfile.gpu .
 
 **Note:** You only need to build the image once. After that, `docker-compose up` will use the cached image and won't download packages every time.
 
-### 3. Start the Application
+### 2. Start the Application
 
 **For most users (CPU):**
 ```bash
@@ -52,11 +44,13 @@ docker-compose up
 docker-compose -f docker-compose.gpu.yml up
 ```
 
-### 4. Open Your Browser
+**Note:** On first startup, the application will automatically download missing models (LLM and TTS). This may take 5-30 minutes depending on your internet speed (~2-3GB total). The application will start serving requests once models are downloaded.
+
+### 3. Open Your Browser
 
 Navigate to: **http://localhost:8080**
 
-### 5. Start Learning!
+### 4. Start Learning!
 
 1. Select your target language (e.g., Spanish)
 2. Choose a scenario (e.g., Restaurant)
@@ -66,16 +60,24 @@ Navigate to: **http://localhost:8080**
 
 ## First Time Setup
 
-The first request may take longer as models are loaded into memory. Subsequent requests will be faster.
+On first startup:
+- Models will be automatically downloaded if missing (LLM and TTS)
+- The first request may take longer as models are loaded into memory
+- Subsequent requests will be faster
 
-## Troubleshooting
-
-### "Models not found" error
-
-Run the download script:
+**Optional:** If you want to pre-download models before starting the container:
 ```bash
 python3 scripts/download_models.py --all
 ```
+
+## Troubleshooting
+
+### Models downloading slowly
+
+Models download automatically on first startup. If downloads fail or are slow:
+- Check your internet connection
+- Pre-download models manually: `python3 scripts/download_models.py --all`
+- Check Docker logs: `docker-compose logs -f`
 
 ### Out of memory
 

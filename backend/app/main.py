@@ -24,6 +24,20 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager for the application."""
     logger.info("Starting Language Learning Assistant API")
     
+    # Check and download missing models
+    try:
+        from .utils.model_downloader import ModelDownloader
+        downloader = ModelDownloader(settings.MODELS_DIR)
+        logger.info("Checking for missing models...")
+        download_results = downloader.ensure_models(
+            llm_model=settings.LLM_MODEL,
+            tts_voice=settings.TTS_VOICE
+        )
+        logger.info(f"Model availability - LLM: {'✓' if download_results['llm'] else '✗'}, "
+                   f"TTS: {'✓' if download_results['tts'] else '✗'}")
+    except Exception as e:
+        logger.warning(f"Model download check failed: {e}. Continuing with available models...")
+    
     # Initialize model handlers
     try:
         logger.info("Initializing STT handler...")

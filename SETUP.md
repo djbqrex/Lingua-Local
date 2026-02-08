@@ -268,22 +268,48 @@ You can also manually download GGUF models from Hugging Face:
 
 ### Slow Performance
 
-**Problem:** Responses take too long
+**Problem:** Responses take too long (>5 seconds)
+
+**Diagnosis:**
+Check timing logs to identify the bottleneck:
+```bash
+docker-compose logs backend | grep "\[TIMING\]"
+```
+
+Look for the breakdown:
+```
+[TIMING] Breakdown - Read: X.XXXs, Write: X.XXXs, STT: X.XXXs, Context: X.XXXs, LLM: X.XXXs
+```
 
 **Solutions:**
-1. Use smaller/faster models
-2. Enable GPU if available
-3. Reduce context length in `.env`:
-   ```bash
-   MAX_CONTEXT_LENGTH=5
-   ```
 
-### GPU Not Detected
+1. **If LLM is slow (>5s):**
+   - **Check GPU usage**: Ensure LLM is using GPU (see "GPU Not Detected" above)
+   - **Use smaller model**: `LLM_MODEL=qwen2.5-1.5b-instruct` instead of 3b
+   - **Use quantized model**: Download Q4_K_M or Q2_K GGUF models
+   - **Reduce context**: Context window is already optimized to 512 tokens
 
-**Problem:** CUDA errors or GPU not used
+2. **If STT is slow (>2s):**
+   - Use smaller Whisper model: `STT_MODEL=base` or `small`
+   - Reduce audio length: Speak shorter phrases
+
+3. **General optimizations:**
+   - Enable GPU if available: `DEVICE=cuda`
+   - Use appropriate model sizes for your hardware (see Performance Tuning section)
+   - Check system resources: `docker stats` and `nvidia-smi`
+
+### GPU Not Detected or LLM Running on CPU
+
+**Problem:** CUDA errors, GPU not used, or LLM is very slow (4-5 chunks/sec instead of 50-100/sec)
+
+**Symptoms:**
+- LLM first token takes 5+ seconds (should be 0.1-0.5s)
+- LLM generation rate is 3-5 chunks/sec (should be 50-100/sec)
+- Logs show: "Could not find nvcc" or "cuBLAS not found"
 
 **Solutions:**
-1. Install NVIDIA Docker runtime:
+
+1. **Install NVIDIA Docker runtime:**
    ```bash
    distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
@@ -293,14 +319,35 @@ You can also manually download GGUF models from Hugging Face:
    sudo systemctl restart docker
    ```
 
-2. Verify GPU access:
+2. **Verify GPU access:**
    ```bash
    docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
    ```
 
-3. Use GPU docker-compose:
+3. **Rebuild Docker image with CUDA support:**
+   
+   The GPU Dockerfile must use `nvidia/cuda:12.1.0-devel-ubuntu22.04` (not `runtime`) to compile `llama-cpp-python` with CUDA support. If you're experiencing slow LLM performance:
+   
    ```bash
+   # Rebuild with CUDA support (takes 5-10 minutes)
+   docker-compose -f docker-compose.gpu.yml build --no-cache
+   
+   # Start the container
    docker-compose -f docker-compose.gpu.yml up
+   ```
+   
+   The Dockerfile should include:
+   ```dockerfile
+   FROM nvidia/cuda:12.1.0-devel-ubuntu22.04  # devel, not runtime!
+   RUN apt-get install cmake ...  # Required for CUDA builds
+   CMAKE_ARGS="-DLLAMA_CUBLAS=on" pip3 install llama-cpp-python
+   ```
+
+4. **Verify GPU usage:**
+   ```bash
+   # Check GPU utilization during inference
+   watch -n 1 nvidia-smi
+   # Should see 80-100% GPU utilization during LLM generation
    ```
 
 ## Updating
@@ -361,23 +408,48 @@ Key settings:
 
 ## Performance Tuning
 
+### Expected Performance
+
+**RTX 3090 (GPU):**
+- STT: 0.5-1s (Whisper medium)
+- LLM First Token: 0.1-0.5s (Qwen 3B)
+- LLM Generation: 50-100 tokens/sec
+- TTS: 0.2s
+- **Total: 1-3s per conversation turn**
+
+**CPU Only:**
+- STT: 1-3s (Whisper base/small)
+- LLM First Token: 0.5-2s (Qwen 1.5B)
+- LLM Generation: 10-30 tokens/sec
+- TTS: 0.5s
+- **Total: 3-8s per conversation turn**
+
 ### For Speed
 - Use smaller models (tiny/base for STT, 0.5b/1.5b for LLM)
-- Set `COMPUTE_TYPE=int8`
-- Reduce `MAX_CONTEXT_LENGTH`
-- Use CPU if GPU overhead is high
+- Set `COMPUTE_TYPE=int8` (CPU) or `float16` (GPU)
+- Ensure GPU is properly configured (see GPU troubleshooting)
+- Use quantized GGUF models (Q4_K_M, Q2_K)
 
 ### For Quality
 - Use larger models (medium/large for STT, 3b/7b for LLM)
-- Set `COMPUTE_TYPE=float16`
-- Increase `MAX_CONTEXT_LENGTH`
+- Set `COMPUTE_TYPE=float16` (GPU)
 - Use GPU acceleration
+- Context window is optimized to 512 tokens (good balance)
 
 ### For Memory Efficiency
-- Use quantized models (Q4, Q5)
-- Set `CACHE_MODELS=false`
+- Use quantized models (Q4_K_M, Q5_K_M)
+- Set `CACHE_MODELS=false` (not recommended - models stay hot for better performance)
 - Use smaller STT models
 - Limit concurrent users
+
+### Streaming Performance
+
+The app uses **streaming responses** by default:
+- **Token-by-token display** - responses appear in real-time
+- **Models stay hot in memory** - no re-initialization overhead
+- **3-5x faster perceived latency** - first token appears quickly
+
+No configuration needed - streaming is enabled automatically.
 
 ## Next Steps
 

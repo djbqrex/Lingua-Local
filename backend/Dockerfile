@@ -24,10 +24,12 @@ ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH=/app
 
-# Install system dependencies including FFmpeg dev libraries
+# Install system dependencies including FFmpeg dev libraries and CUDA toolkit
 # faster-whisper requires av (PyAV) which needs FFmpeg development libraries
+# llama-cpp-python needs CUDA toolkit for GPU support
 RUN apt-get update && apt-get install -y \
     build-essential \
+    cmake \
     curl \
     git \
     ffmpeg \
@@ -51,9 +53,12 @@ COPY backend/requirements.docker.txt ./requirements.txt
 # Install Python dependencies
 # faster-whisper 1.0.3+ uses av>=13.0.0 which builds correctly with modern FFmpeg
 # pydub is installed separately with --no-deps (doesn't need av, just ffmpeg CLI)
+# llama-cpp-python needs to be built with CUDA support
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --prefer-binary -r requirements.txt && \
-    pip install pydub==0.25.1 --no-deps
+    pip install pydub==0.25.1 --no-deps && \
+    # Reinstall llama-cpp-python with CUDA support
+    CMAKE_ARGS="-DLLAMA_CUBLAS=on" pip install --force-reinstall --no-cache-dir llama-cpp-python==0.2.56
 
 # Copy application code
 COPY backend /app/backend

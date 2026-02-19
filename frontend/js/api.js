@@ -87,7 +87,16 @@ export class API {
     /**
      * Synthesize speech from text
      */
-    static async synthesizeSpeech(text, language, voice = null, speechRate = null) {
+    static async synthesizeSpeech(
+        text,
+        language,
+        voice = null,
+        speechRate = null,
+        voiceStyle = 'female',
+        explanationLanguage = 'en',
+        difficulty = 'beginner',
+        explanationVoice = null
+    ) {
         const formData = new FormData();
         formData.append('text', text);
         formData.append('language', language);
@@ -96,6 +105,18 @@ export class API {
         }
         if (speechRate !== null && speechRate !== undefined) {
             formData.append('speech_rate', speechRate.toString());
+        }
+        if (voiceStyle) {
+            formData.append('voice_style', voiceStyle);
+        }
+        if (explanationLanguage) {
+            formData.append('explanation_language', explanationLanguage);
+        }
+        if (difficulty) {
+            formData.append('difficulty', difficulty);
+        }
+        if (explanationVoice) {
+            formData.append('explanation_voice', explanationVoice);
         }
 
         const response = await fetch(`${API_BASE}/conversation/synthesize`, {

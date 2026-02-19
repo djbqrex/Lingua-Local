@@ -21,6 +21,7 @@ class LanguageLearningApp {
         this.audioPlayer = document.getElementById('audio-player');
         this.continuousToggle = document.getElementById('continuous-toggle');
         this.speechRateToggle = document.getElementById('speech-rate-toggle');
+        this.voiceStyleSelect = document.getElementById('voice-style-select');
         this.recordBtnText = this.recordBtn.querySelector('.btn-text');
 
         // Model status badges
@@ -284,8 +285,26 @@ class LanguageLearningApp {
      * Determine speech rate for TTS
      */
     getSpeechRate() {
-        if (!this.speechRateToggle) return 1.0;
-        return this.speechRateToggle.checked ? 1.2 : 1.0;
+        const difficulty = this.difficultySelect?.value || 'beginner';
+        const slowRates = {
+            beginner: 1.45,
+            intermediate: 1.2,
+            advanced: 1.05
+        };
+
+        if (!this.speechRateToggle) {
+            return slowRates[difficulty] || 1.45;
+        }
+
+        return this.speechRateToggle.checked ? (slowRates[difficulty] || 1.45) : 1.0;
+    }
+
+    /**
+     * Get preferred voice style for TTS
+     */
+    getVoiceStyle() {
+        if (!this.voiceStyleSelect) return 'female';
+        return this.voiceStyleSelect.value === 'male' ? 'male' : 'female';
     }
 
     /**
@@ -373,7 +392,7 @@ class LanguageLearningApp {
             this.addMessage('assistant', result.response);
 
             // Synthesize and play response
-            await this.speakText(result.response, language);
+            await this.speakText(result.speech_script || result.response, language);
 
             this.updateStatus('Ready', 'success');
 
@@ -419,7 +438,7 @@ class LanguageLearningApp {
             this.addMessage('assistant', result.response);
 
             // Synthesize and play response
-            await this.speakText(result.response, language);
+            await this.speakText(result.speech_script || result.response, language);
 
             this.updateStatus('Ready', 'success');
 
@@ -438,7 +457,17 @@ class LanguageLearningApp {
     async speakText(text, language) {
         try {
             const speechRate = this.getSpeechRate();
-            const audioBlob = await API.synthesizeSpeech(text, language, null, speechRate);
+            const voiceStyle = this.getVoiceStyle();
+            const difficulty = this.difficultySelect?.value || 'beginner';
+            const audioBlob = await API.synthesizeSpeech(
+                text,
+                language,
+                null,
+                speechRate,
+                voiceStyle,
+                'en',
+                difficulty
+            );
             await this.player.play(audioBlob);
         } catch (error) {
             console.error('Speech synthesis error:', error);

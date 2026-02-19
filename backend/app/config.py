@@ -28,6 +28,8 @@ class Settings:
     STT_MODEL: str = os.getenv("STT_MODEL", "small")  # tiny, base, small, medium, large-v3
     LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen2.5-1.5b-instruct")
     TTS_VOICE: str = os.getenv("TTS_VOICE", "en_US-lessac-medium")
+    TTS_EXPLANATION_VOICE: str = os.getenv("TTS_EXPLANATION_VOICE", "en_US-amy-medium")
+    TTS_VOICE_STYLE: str = os.getenv("TTS_VOICE_STYLE", "female")  # female, male
 
     # Supported Languages
     SUPPORTED_LANGUAGES: List[str] = os.getenv(
@@ -38,6 +40,9 @@ class Settings:
     MAX_AUDIO_LENGTH: int = int(os.getenv("MAX_AUDIO_LENGTH", "30"))  # seconds
     STREAM_AUDIO: bool = os.getenv("STREAM_AUDIO", "true").lower() == "true"
     CACHE_MODELS: bool = os.getenv("CACHE_MODELS", "true").lower() == "true"
+    BEGINNER_SPEECH_RATE: float = float(os.getenv("BEGINNER_SPEECH_RATE", "1.45"))
+    INTERMEDIATE_SPEECH_RATE: float = float(os.getenv("INTERMEDIATE_SPEECH_RATE", "1.20"))
+    ADVANCED_SPEECH_RATE: float = float(os.getenv("ADVANCED_SPEECH_RATE", "1.00"))
 
     # API
     HOST: str = os.getenv("HOST", "0.0.0.0")

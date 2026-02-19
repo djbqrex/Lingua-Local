@@ -141,10 +141,10 @@ class LLMHandler:
         
         # Simple rule-based responses for testing
         fallback_responses = {
-            "hello": "¡Hola! Hello! I'm here to help you practice languages.",
-            "how are you": "I'm doing well, thank you! ¿Cómo estás?",
-            "goodbye": "¡Adiós! Goodbye! See you next time!",
-            "help": "I can help you practice conversational phrases in various languages. Try greeting me or asking a question!",
+            "hello": "[EN]Hello! Let's practice together.[/EN] [TL]¡Hola![/TL] [EN]Pronunciation: oh-lah.[/EN]",
+            "how are you": "[EN]A polite way to ask this is:[/EN] [TL]¿Cómo estás?[/TL] [EN]Pronunciation: koh-moh eh-stahs.[/EN]",
+            "goodbye": "[EN]A common goodbye is:[/EN] [TL]¡Adiós![/TL] [EN]Pronunciation: ah-dee-ohs.[/EN]",
+            "help": "[EN]I can teach short travel phrases, meaning, and pronunciation. Ask for a phrase and I will break it down step by step.[/EN]",
         }
         
         user_lower = user_message.lower()
@@ -152,7 +152,10 @@ class LLMHandler:
             if key in user_lower:
                 return response
         
-        return "I'm here to help you practice! (Note: Language model not loaded yet. Please download a GGUF model.)"
+        return (
+            "[EN]I'm here to help you practice. The language model is not loaded yet, "
+            "so responses are limited. Please download a GGUF model for full tutoring.[/EN]"
+        )
 
     def count_tokens(self, text: str) -> int:
         """Count tokens in text."""

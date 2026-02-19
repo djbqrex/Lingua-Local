@@ -316,6 +316,8 @@ COMPUTE_TYPE=float16 # float16, int8, or float32
 STT_MODEL=small      # tiny, base, small, medium, large-v3
 LLM_MODEL=qwen2.5-1.5b-instruct
 TTS_VOICE=en_US-lessac-medium
+TTS_EXPLANATION_VOICE=en_US-amy-medium  # voice for English explanations
+TTS_VOICE_STYLE=female                  # female or male if available
 
 # Languages
 SUPPORTED_LANGUAGES=en,es,fr,de,it,pt,ja,zh,ko,ar
@@ -324,6 +326,9 @@ SUPPORTED_LANGUAGES=en,es,fr,de,it,pt,ja,zh,ko,ar
 MAX_AUDIO_LENGTH=30  # seconds
 STREAM_AUDIO=true
 CACHE_MODELS=true
+BEGINNER_SPEECH_RATE=1.45      # higher is slower (Piper length_scale)
+INTERMEDIATE_SPEECH_RATE=1.20
+ADVANCED_SPEECH_RATE=1.00
 ```
 
 ## 🌍 Supported Languages (Initial)

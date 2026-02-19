@@ -33,6 +33,14 @@ async def lifespan(app: FastAPI):
             llm_model=settings.LLM_MODEL,
             tts_voice=settings.TTS_VOICE
         )
+        if settings.TTS_EXPLANATION_VOICE and settings.TTS_EXPLANATION_VOICE != settings.TTS_VOICE:
+            logger.info(
+                "Checking explanation TTS voice: %s",
+                settings.TTS_EXPLANATION_VOICE,
+            )
+            download_results["tts_explanation"] = downloader.download_piper_voice(
+                settings.TTS_EXPLANATION_VOICE
+            )
         logger.info(f"Model availability - LLM: {'✓' if download_results['llm'] else '✗'}, "
                    f"TTS: {'✓' if download_results['tts'] else '✗'}")
     except Exception as e:

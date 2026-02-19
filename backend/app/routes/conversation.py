@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from ..config import settings
+from ..utils.language import LanguageHelper
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class ConversationRequest(BaseModel):
     language: str = "en"
     difficulty: str = "beginner"
     scenario: str = "greeting"
-    history: List[ConversationMessage] = []
+    history: List[ConversationMessage] = Field(default_factory=list)
 
 
 class ConversationResponse(BaseModel):
@@ -36,6 +39,8 @@ class ConversationResponse(BaseModel):
     language: str
     detected_language: Optional[str] = None
     transcribed_text: Optional[str] = None
+    speech_script: Optional[str] = None
+    speech_segments: List[Dict[str, str]] = Field(default_factory=list)
 
 
 class TranscriptionResponse(BaseModel):
@@ -50,6 +55,27 @@ class TranscriptionResponse(BaseModel):
 conversation_sessions: Dict[str, List[ConversationMessage]] = {}
 
 
+def _prepare_speech_response(response_text: str, target_language: str) -> Dict[str, object]:
+    """Prepare clean display text and language-tagged segments for TTS."""
+    speech_script = response_text or ""
+    clean_response = LanguageHelper.strip_speech_tags(speech_script) or speech_script
+    speech_segments = LanguageHelper.split_speech_segments(
+        text=speech_script,
+        target_language=target_language,
+        explanation_language=LanguageHelper.EXPLANATION_LANGUAGE_CODE,
+    )
+    if not speech_segments and clean_response:
+        speech_segments = [{
+            "text": clean_response,
+            "language": target_language.lower(),
+        }]
+    return {
+        "response": clean_response,
+        "speech_script": speech_script,
+        "speech_segments": speech_segments,
+    }
+
+
 @router.post("/text", response_model=ConversationResponse)
 async def text_conversation(request: ConversationRequest):
     """
@@ -62,7 +88,6 @@ async def text_conversation(request: ConversationRequest):
         Assistant's response
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         llm_handler = app.state.llm_handler
@@ -98,9 +123,12 @@ async def text_conversation(request: ConversationRequest):
             temperature=0.7
         )
         
+        prepared_response = _prepare_speech_response(response_text, request.language)
         return ConversationResponse(
-            response=response_text,
-            language=request.language
+            response=prepared_response["response"],
+            language=request.language,
+            speech_script=prepared_response["speech_script"],
+            speech_segments=prepared_response["speech_segments"],
         )
         
     except Exception as e:
@@ -124,7 +152,6 @@ async def transcribe_audio(
         Transcription result
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         stt_handler = app.state.stt_handler
@@ -168,7 +195,11 @@ async def synthesize_speech(
     text: str = Form(...),
     language: str = Form("en"),
     voice: Optional[str] = Form(None),
-    speech_rate: Optional[float] = Form(None)
+    speech_rate: Optional[float] = Form(None),
+    voice_style: Optional[str] = Form(settings.TTS_VOICE_STYLE),
+    explanation_voice: Optional[str] = Form(None),
+    explanation_language: str = Form(LanguageHelper.EXPLANATION_LANGUAGE_CODE),
+    difficulty: str = Form("beginner"),
 ):
     """
     Synthesize speech from text.
@@ -176,27 +207,69 @@ async def synthesize_speech(
     Args:
         text: Text to synthesize
         language: Target language code
-        voice: Specific voice to use (optional)
+        voice: Target-language voice override (optional)
+        speech_rate: Piper length_scale (higher = slower)
+        voice_style: "female" or "male" voice profile preference
+        explanation_voice: Explanation-language voice override (optional)
+        explanation_language: Language used for explanatory text
+        difficulty: Conversation difficulty for pace defaults
         
     Returns:
         Audio file (WAV)
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         tts_handler = app.state.tts_handler
-        
-        # Get appropriate voice for language
-        if not voice:
-            voice = LanguageHelper.get_tts_voice(language)
-        
-        # Set voice if different from current
-        if voice != tts_handler.voice:
-            tts_handler.set_voice(voice)
-        
-        # Synthesize
-        audio_data = tts_handler.synthesize(text, length_scale=speech_rate)
+        if tts_handler is None:
+            raise HTTPException(status_code=503, detail="TTS model is not available")
+
+        selected_voices = LanguageHelper.get_bilingual_voices(
+            target_language=language,
+            voice_style=voice_style,
+            target_preference=voice,
+            explanation_preference=explanation_voice or settings.TTS_EXPLANATION_VOICE,
+            explanation_language=explanation_language,
+        )
+
+        segments = LanguageHelper.split_speech_segments(
+            text=text,
+            target_language=language,
+            explanation_language=selected_voices["explanation_language"],
+        )
+        if not segments:
+            stripped_text = LanguageHelper.strip_speech_tags(text) or text
+            segments = [{"text": stripped_text, "language": language.lower()}]
+
+        speech_scale = speech_rate
+        if speech_scale is None:
+            speech_scale = {
+                "beginner": settings.BEGINNER_SPEECH_RATE,
+                "intermediate": settings.INTERMEDIATE_SPEECH_RATE,
+                "advanced": settings.ADVANCED_SPEECH_RATE,
+            }.get(difficulty.lower(), settings.BEGINNER_SPEECH_RATE)
+
+        voice_map = {
+            selected_voices["target_language"]: selected_voices["target_voice"],
+            selected_voices["explanation_language"]: selected_voices["explanation_voice"],
+        }
+
+        uses_multiple_languages = any(
+            segment["language"] != selected_voices["target_language"]
+            for segment in segments
+        )
+        if uses_multiple_languages or len(segments) > 1:
+            audio_data = tts_handler.synthesize_segments(
+                segments=segments,
+                voice_for_language=voice_map,
+                length_scale=speech_scale,
+            )
+        else:
+            audio_data = tts_handler.synthesize(
+                text=segments[0]["text"],
+                voice=selected_voices["target_voice"],
+                length_scale=speech_scale,
+            )
         
         return Response(
             content=audio_data,
@@ -234,7 +307,6 @@ async def speak_and_respond(
         Transcribed user text and assistant's response
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         stt_handler = app.state.stt_handler
@@ -301,6 +373,8 @@ async def speak_and_respond(
             
             logger.info(f"Response: {response_text}")
             
+            prepared_response = _prepare_speech_response(response_text, language)
+
             # Update session history
             history.append(ConversationMessage(
                 role="user",
@@ -309,7 +383,7 @@ async def speak_and_respond(
             ))
             history.append(ConversationMessage(
                 role="assistant",
-                content=response_text,
+                content=prepared_response["response"],
                 language=language
             ))
             
@@ -318,10 +392,12 @@ async def speak_and_respond(
                 conversation_sessions[session_id] = history[-20:]
             
             return ConversationResponse(
-                response=response_text,
+                response=prepared_response["response"],
                 language=language,
                 detected_language=detected_language,
-                transcribed_text=user_text
+                transcribed_text=user_text,
+                speech_script=prepared_response["speech_script"],
+                speech_segments=prepared_response["speech_segments"],
             )
             
         finally:
@@ -357,8 +433,9 @@ async def clear_session(session_id: str):
 @router.get("/voices")
 async def get_available_voices():
     """Get list of available TTS voices."""
-    from ..utils.language import LanguageHelper
-    
     return {
-        "voices": LanguageHelper.TTS_VOICES
+        "voices": LanguageHelper.get_voice_catalog(),
+        "voice_styles": sorted(LanguageHelper.VOICE_STYLE_OPTIONS),
+        "default_voice_style": "female",
+        "explanation_language": LanguageHelper.EXPLANATION_LANGUAGE_CODE,
     }

@@ -30,6 +30,8 @@ or manually:
 docker build -t lingua-local:gpu -f backend/Dockerfile.gpu .
 ```
 
+**Important for GPU users:** The first build takes 5-10 minutes because it compiles `llama-cpp-python` with CUDA support. This is required for GPU acceleration - without it, the LLM will run on CPU and be 15-20x slower.
+
 **Note:** You only need to build the image once. After that, `docker-compose up` will use the cached image and won't download packages every time.
 
 ### 2. Start the Application

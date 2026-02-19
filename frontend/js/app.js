@@ -358,24 +358,60 @@ class LanguageLearningApp {
         try {
             this.disableInputs();
 
-            // Use the speak endpoint for complete workflow
-            const result = await API.speakAndRespond(
+            let userMessageDiv = null;
+            let assistantMessageDiv = null;
+            let assistantContentDiv = null;
+            let fullResponse = '';
+            let transcribedText = '';
+
+            // Use streaming endpoint for real-time response
+            await API.speakAndRespondStream(
                 audioBlob,
                 language,
                 difficulty,
                 scenario,
-                this.sessionId
+                this.sessionId,
+                {
+                    onTranscription: (data) => {
+                        // Display transcribed user message
+                        transcribedText = data.text;
+                        this.updateStatus(`You said: "${data.text}"`, 'info');
+                        userMessageDiv = this.addMessageElement('user', data.text);
+                    },
+                    onResponseStart: () => {
+                        this.updateStatus('Assistant is responding...', 'info');
+                        // Create assistant message element that we'll update
+                        assistantMessageDiv = this.createMessageElement('assistant', '');
+                        assistantContentDiv = assistantMessageDiv.querySelector('.message-content');
+                        this.conversationHistory.appendChild(assistantMessageDiv);
+                    },
+                    onResponseChunk: (chunk) => {
+                        // Update assistant message with new chunk
+                        fullResponse += chunk;
+                        assistantContentDiv.innerHTML = `<strong>Assistant:</strong> ${this.escapeHtml(fullResponse)}`;
+                        // Auto-scroll to bottom
+                        this.conversationHistory.scrollTop = this.conversationHistory.scrollHeight;
+                    },
+                    onComplete: async (data) => {
+                        // Update conversation history
+                        if (transcribedText) {
+                            this.messages.push({ role: 'user', content: transcribedText });
+                        }
+                        this.messages.push({ role: 'assistant', content: data.full_response });
+
+                        // Synthesize and play response
+                        this.updateStatus('Speaking response...', 'info');
+                        await this.speakText(data.full_response, language);
+
+                        this.updateStatus('Ready', 'success');
+                    },
+                    onError: (error) => {
+                        console.error('Streaming error:', error);
+                        this.addMessage('system', `Error: ${error}`);
+                        this.updateStatus('Error in conversation', 'error');
+                    }
+                }
             );
-
-            // Display the transcribed text if available, otherwise show language detection
-            const userMessage = result.transcribed_text || `[You spoke in ${result.detected_language || language}]`;
-            this.addMessage('user', userMessage);
-            this.addMessage('assistant', result.response);
-
-            // Synthesize and play response
-            await this.speakText(result.response, language);
-
-            this.updateStatus('Ready', 'success');
 
         } catch (error) {
             console.error('Voice processing error:', error);
@@ -406,22 +442,48 @@ class LanguageLearningApp {
             // Add user message
             this.addMessage('user', message);
 
-            // Send to API
-            const result = await API.sendMessage(
+            let assistantMessageDiv = null;
+            let assistantContentDiv = null;
+            let fullResponse = '';
+
+            // Use streaming for text messages too
+            await API.sendMessageStream(
                 message,
                 language,
                 difficulty,
                 scenario,
-                this.messages
+                this.messages,
+                {
+                    onStart: () => {
+                        // Create assistant message element that we'll update
+                        assistantMessageDiv = this.createMessageElement('assistant', '');
+                        assistantContentDiv = assistantMessageDiv.querySelector('.message-content');
+                        this.conversationHistory.appendChild(assistantMessageDiv);
+                    },
+                    onChunk: (chunk) => {
+                        // Update assistant message with new chunk
+                        fullResponse += chunk;
+                        assistantContentDiv.innerHTML = `<strong>Assistant:</strong> ${this.escapeHtml(fullResponse)}`;
+                        // Auto-scroll to bottom
+                        this.conversationHistory.scrollTop = this.conversationHistory.scrollHeight;
+                    },
+                    onComplete: async (data) => {
+                        // Update conversation history
+                        this.messages.push({ role: 'assistant', content: data.full_response });
+
+                        // Synthesize and play response
+                        this.updateStatus('Speaking response...', 'info');
+                        await this.speakText(data.full_response, language);
+
+                        this.updateStatus('Ready', 'success');
+                    },
+                    onError: (error) => {
+                        console.error('Streaming error:', error);
+                        this.addMessage('system', `Error: ${error}`);
+                        this.updateStatus('Error in conversation', 'error');
+                    }
+                }
             );
-
-            // Add assistant response
-            this.addMessage('assistant', result.response);
-
-            // Synthesize and play response
-            await this.speakText(result.response, language);
-
-            this.updateStatus('Ready', 'success');
 
         } catch (error) {
             console.error('Message error:', error);
@@ -447,15 +509,9 @@ class LanguageLearningApp {
     }
 
     /**
-     * Add message to conversation history
+     * Create a message element without adding to messages array
      */
-    addMessage(role, content) {
-        // Add to messages array
-        if (role !== 'system') {
-            this.messages.push({ role, content });
-        }
-
-        // Create message element
+    createMessageElement(role, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
         
@@ -468,10 +524,33 @@ class LanguageLearningApp {
         contentDiv.innerHTML = `<strong>${roleLabel}:</strong> ${this.escapeHtml(content)}`;
         
         messageDiv.appendChild(contentDiv);
+        return messageDiv;
+    }
+
+    /**
+     * Add message element to conversation history
+     */
+    addMessageElement(role, content) {
+        const messageDiv = this.createMessageElement(role, content);
         this.conversationHistory.appendChild(messageDiv);
 
         // Scroll to bottom
         this.conversationHistory.scrollTop = this.conversationHistory.scrollHeight;
+        
+        return messageDiv;
+    }
+
+    /**
+     * Add message to conversation history
+     */
+    addMessage(role, content) {
+        // Add to messages array
+        if (role !== 'system') {
+            this.messages.push({ role, content });
+        }
+
+        // Create and add message element
+        this.addMessageElement(role, content);
     }
 
     /**

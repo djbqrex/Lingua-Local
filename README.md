@@ -329,6 +329,7 @@ CACHE_MODELS=true
 BEGINNER_SPEECH_RATE=1.45      # higher is slower (Piper length_scale)
 INTERMEDIATE_SPEECH_RATE=1.20
 ADVANCED_SPEECH_RATE=1.00
+TEACHING_INTENSITY=standard    # light, standard, deep
 ```
 
 ## 🌍 Supported Languages (Initial)

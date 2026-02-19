@@ -40,7 +40,14 @@ export class API {
     /**
      * Send text message and get response
      */
-    static async sendMessage(message, language, difficulty, scenario, history = []) {
+    static async sendMessage(
+        message,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        history = []
+    ) {
         const response = await fetch(`${API_BASE}/conversation/text`, {
             method: 'POST',
             headers: {
@@ -51,6 +58,7 @@ export class API {
                 language,
                 difficulty,
                 scenario,
+                teaching_intensity: teachingIntensity,
                 history
             })
         });
@@ -95,6 +103,7 @@ export class API {
         voiceStyle = 'female',
         explanationLanguage = 'en',
         difficulty = 'beginner',
+        teachingIntensity = 'standard',
         explanationVoice = null
     ) {
         const formData = new FormData();
@@ -115,6 +124,9 @@ export class API {
         if (difficulty) {
             formData.append('difficulty', difficulty);
         }
+        if (teachingIntensity) {
+            formData.append('teaching_intensity', teachingIntensity);
+        }
         if (explanationVoice) {
             formData.append('explanation_voice', explanationVoice);
         }
@@ -134,12 +146,20 @@ export class API {
     /**
      * Complete conversation: send audio, get text response
      */
-    static async speakAndRespond(audioBlob, language, difficulty, scenario, sessionId = null) {
+    static async speakAndRespond(
+        audioBlob,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        sessionId = null
+    ) {
         const formData = new FormData();
         formData.append('audio', audioBlob, 'recording.wav');
         formData.append('language', language);
         formData.append('difficulty', difficulty);
         formData.append('scenario', scenario);
+        formData.append('teaching_intensity', teachingIntensity);
         if (sessionId) {
             formData.append('session_id', sessionId);
         }

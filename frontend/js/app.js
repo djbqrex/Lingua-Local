@@ -14,6 +14,7 @@ class LanguageLearningApp {
         this.sendBtn = document.getElementById('send-btn');
         this.languageSelect = document.getElementById('language-select');
         this.difficultySelect = document.getElementById('difficulty-select');
+        this.teachingIntensitySelect = document.getElementById('teaching-intensity-select');
         this.scenarioSelect = document.getElementById('scenario-select');
         this.clearHistoryBtn = document.getElementById('clear-history');
         this.statusIndicator = document.getElementById('status-indicator');
@@ -286,17 +287,24 @@ class LanguageLearningApp {
      */
     getSpeechRate() {
         const difficulty = this.difficultySelect?.value || 'beginner';
+        const intensity = this.getTeachingIntensity();
         const slowRates = {
             beginner: 1.45,
             intermediate: 1.2,
             advanced: 1.05
         };
+        const intensityOffset = {
+            light: -0.08,
+            standard: 0.0,
+            deep: 0.08
+        };
+        const baseRate = (slowRates[difficulty] || 1.45) + (intensityOffset[intensity] || 0.0);
 
         if (!this.speechRateToggle) {
-            return slowRates[difficulty] || 1.45;
+            return baseRate;
         }
 
-        return this.speechRateToggle.checked ? (slowRates[difficulty] || 1.45) : 1.0;
+        return this.speechRateToggle.checked ? baseRate : 1.0;
     }
 
     /**
@@ -305,6 +313,16 @@ class LanguageLearningApp {
     getVoiceStyle() {
         if (!this.voiceStyleSelect) return 'female';
         return this.voiceStyleSelect.value === 'male' ? 'male' : 'female';
+    }
+
+    /**
+     * Get teaching intensity preference
+     */
+    getTeachingIntensity() {
+        if (!this.teachingIntensitySelect) return 'standard';
+        const value = this.teachingIntensitySelect.value;
+        if (value === 'light' || value === 'deep') return value;
+        return 'standard';
     }
 
     /**
@@ -372,6 +390,7 @@ class LanguageLearningApp {
     async processVoiceInput(audioBlob) {
         const language = this.languageSelect.value;
         const difficulty = this.difficultySelect.value;
+        const teachingIntensity = this.getTeachingIntensity();
         const scenario = this.scenarioSelect.value;
 
         try {
@@ -383,6 +402,7 @@ class LanguageLearningApp {
                 language,
                 difficulty,
                 scenario,
+                teachingIntensity,
                 this.sessionId
             );
 
@@ -415,6 +435,7 @@ class LanguageLearningApp {
 
         const language = this.languageSelect.value;
         const difficulty = this.difficultySelect.value;
+        const teachingIntensity = this.getTeachingIntensity();
         const scenario = this.scenarioSelect.value;
 
         try {
@@ -431,6 +452,7 @@ class LanguageLearningApp {
                 language,
                 difficulty,
                 scenario,
+                teachingIntensity,
                 this.messages
             );
 
@@ -459,6 +481,7 @@ class LanguageLearningApp {
             const speechRate = this.getSpeechRate();
             const voiceStyle = this.getVoiceStyle();
             const difficulty = this.difficultySelect?.value || 'beginner';
+            const teachingIntensity = this.getTeachingIntensity();
             const audioBlob = await API.synthesizeSpeech(
                 text,
                 language,
@@ -466,7 +489,8 @@ class LanguageLearningApp {
                 speechRate,
                 voiceStyle,
                 'en',
-                difficulty
+                difficulty,
+                teachingIntensity
             );
             await this.player.play(audioBlob);
         } catch (error) {
@@ -538,6 +562,10 @@ class LanguageLearningApp {
         this.recordBtn.disabled = true;
         this.sendBtn.disabled = true;
         this.textInput.disabled = true;
+        if (this.languageSelect) this.languageSelect.disabled = true;
+        if (this.difficultySelect) this.difficultySelect.disabled = true;
+        if (this.teachingIntensitySelect) this.teachingIntensitySelect.disabled = true;
+        if (this.scenarioSelect) this.scenarioSelect.disabled = true;
     }
 
     /**
@@ -547,6 +575,10 @@ class LanguageLearningApp {
         this.recordBtn.disabled = false;
         this.sendBtn.disabled = false;
         this.textInput.disabled = false;
+        if (this.languageSelect) this.languageSelect.disabled = false;
+        if (this.difficultySelect) this.difficultySelect.disabled = false;
+        if (this.teachingIntensitySelect) this.teachingIntensitySelect.disabled = false;
+        if (this.scenarioSelect) this.scenarioSelect.disabled = false;
     }
 
     /**

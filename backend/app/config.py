@@ -43,6 +43,7 @@ class Settings:
     BEGINNER_SPEECH_RATE: float = float(os.getenv("BEGINNER_SPEECH_RATE", "1.45"))
     INTERMEDIATE_SPEECH_RATE: float = float(os.getenv("INTERMEDIATE_SPEECH_RATE", "1.20"))
     ADVANCED_SPEECH_RATE: float = float(os.getenv("ADVANCED_SPEECH_RATE", "1.00"))
+    TEACHING_INTENSITY: str = os.getenv("TEACHING_INTENSITY", "standard")  # light, standard, deep
 
     # API
     HOST: str = os.getenv("HOST", "0.0.0.0")

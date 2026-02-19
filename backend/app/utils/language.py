@@ -13,6 +13,7 @@ class LanguageHelper:
     EXPLANATION_LANGUAGE_CODE = "en"
     DEFAULT_TTS_FALLBACK_VOICE = "en_US-lessac-medium"
     VOICE_STYLE_OPTIONS = {"female", "male"}
+    TEACHING_INTENSITY_OPTIONS = {"light", "standard", "deep"}
     SPEECH_TAG_PATTERN = re.compile(r"\[(EN|TL)\](.*?)\[/\1\]", re.IGNORECASE | re.DOTALL)
     ENGLISH_HINT_WORDS = {
         "a", "an", "and", "are", "do", "for", "from", "have", "how", "i", "in", "is",
@@ -132,6 +133,14 @@ class LanguageHelper:
         if candidate in cls.VOICE_STYLE_OPTIONS:
             return candidate
         return "female"
+
+    @classmethod
+    def normalize_teaching_intensity(cls, teaching_intensity: Optional[str]) -> str:
+        """Normalize teaching intensity selection."""
+        candidate = (teaching_intensity or "standard").lower()
+        if candidate in cls.TEACHING_INTENSITY_OPTIONS:
+            return candidate
+        return "standard"
 
     @classmethod
     def get_language_name(cls, code: str) -> str:
@@ -337,7 +346,8 @@ class LanguageHelper:
         cls,
         language: str,
         difficulty: str = "beginner",
-        scenario: str = "greeting"
+        scenario: str = "greeting",
+        teaching_intensity: str = "standard",
     ) -> str:
         """
         Format system prompt for language learning.
@@ -352,6 +362,7 @@ class LanguageHelper:
         """
         language_name = cls.get_language_name(language)
         scenario_desc = cls.get_scenario_description(scenario)
+        intensity = cls.normalize_teaching_intensity(teaching_intensity)
 
         if difficulty == "beginner":
             balance_guidance = (
@@ -359,30 +370,70 @@ class LanguageHelper:
                 "Break down new words into syllables, explain difficult vowels/consonants, and include "
                 "a quick pronunciation tip (stress, mouth position, or sound comparison)."
             )
-            length_guidance = "Keep each reply short: 2-4 compact teaching lines."
+            if intensity == "light":
+                length_guidance = "Keep replies very short: 2-3 compact lines."
+                intensity_guidance = (
+                    "Teach one core phrase only. Include exactly one pronunciation hint and "
+                    "one translation."
+                )
+            elif intensity == "deep":
+                length_guidance = "Keep replies focused but rich: 4-6 short lines."
+                intensity_guidance = (
+                    "Teach one core phrase plus one variation. Add syllable breakdown, sound note, "
+                    "and one tiny practice prompt."
+                )
+            else:
+                length_guidance = "Keep each reply short: 3-4 compact teaching lines."
+                intensity_guidance = (
+                    "Teach one core phrase with translation, pronunciation, and one quick usage tip."
+                )
         elif difficulty == "intermediate":
             balance_guidance = (
                 f"Use a balanced mix of English and {language_name}. "
                 "Provide concise meaning and pronunciation support for new phrases."
             )
-            length_guidance = "Keep each reply concise: 2-3 sentences."
+            if intensity == "light":
+                length_guidance = "Keep replies concise: 2-3 short lines."
+                intensity_guidance = "Prioritize one practical phrase and one context note."
+            elif intensity == "deep":
+                length_guidance = "Keep replies concise but complete: 4-5 short lines."
+                intensity_guidance = "Include one nuance, one correction, and one challenge question."
+            else:
+                length_guidance = "Keep each reply concise: 3-4 lines."
+                intensity_guidance = "Provide one practical phrase, explanation, and short follow-up."
         else:
             balance_guidance = (
                 f"Respond mostly in {language_name}. "
                 "Use brief English only for clarification or correction when helpful."
             )
-            length_guidance = "Keep each reply concise unless asked for detail."
+            if intensity == "light":
+                length_guidance = "Keep responses concise unless asked for detail."
+                intensity_guidance = "Focus on natural phrasing and one concise correction."
+            elif intensity == "deep":
+                length_guidance = "Allow moderate detail when it improves clarity."
+                intensity_guidance = "Provide nuance, register notes, and one refinement task."
+            else:
+                length_guidance = "Keep each reply concise unless asked for detail."
+                intensity_guidance = "Balance natural conversation with one useful correction."
 
-        prompt = f"""You are a patient language tutor helping a beginner learn {language_name} for travel.
+        prompt = f"""You are a patient language tutor helping a learner practice {language_name} for travel.
 
 Current scenario: {scenario_desc}
+Teaching intensity: {intensity}
 
 Teaching behavior:
 1. Teach practical phrases that are immediately useful.
 2. Correct mistakes gently and clearly.
 3. {balance_guidance}
 4. {length_guidance}
-5. For pronunciation support, prefer simple readable hints (for example: "ho-la", "long a", "soft r").
+5. {intensity_guidance}
+6. For pronunciation support, use simple readable hints (for example: "ho-la", "long a", "soft r"), avoid IPA.
+7. Keep wording simple and deterministic because responses are generated by a small local model.
+
+Beginner-focused structure (especially important when difficulty=beginner):
+- Prefer this sequence: meaning -> phrase -> pronunciation -> micro-practice.
+- Keep one idea per line.
+- Avoid long paragraphs, markdown tables, or nested lists.
 
 Output formatting rules (mandatory for speech synthesis):
 - Wrap ALL English explanation text in [EN]...[/EN]
@@ -391,9 +442,39 @@ Output formatting rules (mandatory for speech synthesis):
 - Keep punctuation inside the tags.
 
 Example format:
-[EN]Say this when greeting someone politely:[/EN] [TL]Buenos dias.[/TL] [EN]Pronunciation: bweh-nos dee-as.[/EN]
+[EN]Meaning: Say this when greeting someone politely.[/EN]
+[TL]Buenos dias.[/TL]
+[EN]Pronunciation: bweh-nos dee-as.[/EN]
+[EN]Practice: Repeat it once slowly.[/EN]
 """
         return prompt
+
+    @classmethod
+    def get_generation_settings(
+        cls,
+        difficulty: str = "beginner",
+        teaching_intensity: str = "standard",
+    ) -> Dict[str, float]:
+        """Get LLM generation settings tuned for local model stability."""
+        level = difficulty.lower()
+        intensity = cls.normalize_teaching_intensity(teaching_intensity)
+
+        defaults = {
+            "beginner": {"max_tokens": 220, "temperature": 0.45, "top_p": 0.85},
+            "intermediate": {"max_tokens": 240, "temperature": 0.55, "top_p": 0.90},
+            "advanced": {"max_tokens": 256, "temperature": 0.65, "top_p": 0.92},
+        }
+        settings = defaults.get(level, defaults["beginner"]).copy()
+
+        # Intensity controls amount of teaching detail while staying bounded for local inference.
+        if intensity == "light":
+            settings["max_tokens"] = max(140, int(settings["max_tokens"] - 60))
+            settings["temperature"] = max(0.35, settings["temperature"] - 0.08)
+        elif intensity == "deep":
+            settings["max_tokens"] = min(340, int(settings["max_tokens"] + 80))
+            settings["temperature"] = min(0.72, settings["temperature"] + 0.05)
+
+        return settings
 
     @classmethod
     def get_difficulty_guidelines(cls, difficulty: str) -> Dict[str, Any]:

@@ -29,6 +29,7 @@ class ConversationRequest(BaseModel):
     message: str
     language: str = "en"
     difficulty: str = "beginner"
+    teaching_intensity: str = settings.TEACHING_INTENSITY
     scenario: str = "greeting"
     history: List[ConversationMessage] = Field(default_factory=list)
 
@@ -53,6 +54,22 @@ class TranscriptionResponse(BaseModel):
 
 # In-memory conversation storage (should use a database in production)
 conversation_sessions: Dict[str, List[ConversationMessage]] = {}
+
+
+def _resolve_default_speech_scale(difficulty: str, teaching_intensity: str) -> float:
+    """Resolve default speech speed for learner comfort."""
+    base_scale = {
+        "beginner": settings.BEGINNER_SPEECH_RATE,
+        "intermediate": settings.INTERMEDIATE_SPEECH_RATE,
+        "advanced": settings.ADVANCED_SPEECH_RATE,
+    }.get(difficulty.lower(), settings.BEGINNER_SPEECH_RATE)
+
+    intensity = LanguageHelper.normalize_teaching_intensity(teaching_intensity)
+    if intensity == "deep":
+        return min(2.0, base_scale + 0.08)
+    if intensity == "light":
+        return max(0.95, base_scale - 0.08)
+    return base_scale
 
 
 def _prepare_speech_response(response_text: str, target_language: str) -> Dict[str, object]:
@@ -91,6 +108,9 @@ async def text_conversation(request: ConversationRequest):
     
     try:
         llm_handler = app.state.llm_handler
+        if llm_handler is None:
+            raise HTTPException(status_code=503, detail="LLM model is not available")
+        teaching_intensity = LanguageHelper.normalize_teaching_intensity(request.teaching_intensity)
         
         # Build conversation history
         messages = []
@@ -99,7 +119,8 @@ async def text_conversation(request: ConversationRequest):
         system_prompt = LanguageHelper.format_system_prompt(
             language=request.language,
             difficulty=request.difficulty,
-            scenario=request.scenario
+            scenario=request.scenario,
+            teaching_intensity=teaching_intensity,
         )
         messages.append({"role": "system", "content": system_prompt})
         
@@ -117,10 +138,15 @@ async def text_conversation(request: ConversationRequest):
         })
         
         # Generate response
+        generation_settings = LanguageHelper.get_generation_settings(
+            difficulty=request.difficulty,
+            teaching_intensity=teaching_intensity,
+        )
         response_text = llm_handler.generate(
             messages=messages,
-            max_tokens=256,
-            temperature=0.7
+            max_tokens=int(generation_settings["max_tokens"]),
+            temperature=generation_settings["temperature"],
+            top_p=generation_settings["top_p"],
         )
         
         prepared_response = _prepare_speech_response(response_text, request.language)
@@ -131,6 +157,8 @@ async def text_conversation(request: ConversationRequest):
             speech_segments=prepared_response["speech_segments"],
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Text conversation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -155,6 +183,8 @@ async def transcribe_audio(
     
     try:
         stt_handler = app.state.stt_handler
+        if stt_handler is None:
+            raise HTTPException(status_code=503, detail="STT model is not available")
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
@@ -185,6 +215,8 @@ async def transcribe_audio(
             # Clean up temp file
             Path(temp_path).unlink(missing_ok=True)
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Transcription failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -200,6 +232,7 @@ async def synthesize_speech(
     explanation_voice: Optional[str] = Form(None),
     explanation_language: str = Form(LanguageHelper.EXPLANATION_LANGUAGE_CODE),
     difficulty: str = Form("beginner"),
+    teaching_intensity: str = Form(settings.TEACHING_INTENSITY),
 ):
     """
     Synthesize speech from text.
@@ -213,6 +246,7 @@ async def synthesize_speech(
         explanation_voice: Explanation-language voice override (optional)
         explanation_language: Language used for explanatory text
         difficulty: Conversation difficulty for pace defaults
+        teaching_intensity: light, standard, or deep teaching detail
         
     Returns:
         Audio file (WAV)
@@ -223,6 +257,7 @@ async def synthesize_speech(
         tts_handler = app.state.tts_handler
         if tts_handler is None:
             raise HTTPException(status_code=503, detail="TTS model is not available")
+        normalized_teaching_intensity = LanguageHelper.normalize_teaching_intensity(teaching_intensity)
 
         selected_voices = LanguageHelper.get_bilingual_voices(
             target_language=language,
@@ -243,11 +278,10 @@ async def synthesize_speech(
 
         speech_scale = speech_rate
         if speech_scale is None:
-            speech_scale = {
-                "beginner": settings.BEGINNER_SPEECH_RATE,
-                "intermediate": settings.INTERMEDIATE_SPEECH_RATE,
-                "advanced": settings.ADVANCED_SPEECH_RATE,
-            }.get(difficulty.lower(), settings.BEGINNER_SPEECH_RATE)
+            speech_scale = _resolve_default_speech_scale(
+                difficulty=difficulty,
+                teaching_intensity=normalized_teaching_intensity,
+            )
 
         voice_map = {
             selected_voices["target_language"]: selected_voices["target_voice"],
@@ -279,6 +313,8 @@ async def synthesize_speech(
             }
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Speech synthesis failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -289,6 +325,7 @@ async def speak_and_respond(
     audio: UploadFile = File(...),
     language: str = Form("en"),
     difficulty: str = Form("beginner"),
+    teaching_intensity: str = Form(settings.TEACHING_INTENSITY),
     scenario: str = Form("greeting"),
     session_id: Optional[str] = Form(None)
 ):
@@ -300,6 +337,7 @@ async def speak_and_respond(
         audio: Audio file with user's speech
         language: Target language
         difficulty: Difficulty level
+        teaching_intensity: light, standard, or deep teaching detail
         scenario: Conversation scenario
         session_id: Optional session ID for maintaining context
         
@@ -311,6 +349,11 @@ async def speak_and_respond(
     try:
         stt_handler = app.state.stt_handler
         llm_handler = app.state.llm_handler
+        if stt_handler is None:
+            raise HTTPException(status_code=503, detail="STT model is not available")
+        if llm_handler is None:
+            raise HTTPException(status_code=503, detail="LLM model is not available")
+        normalized_teaching_intensity = LanguageHelper.normalize_teaching_intensity(teaching_intensity)
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
@@ -347,7 +390,8 @@ async def speak_and_respond(
             system_prompt = LanguageHelper.format_system_prompt(
                 language=language,
                 difficulty=difficulty,
-                scenario=scenario
+                scenario=scenario,
+                teaching_intensity=normalized_teaching_intensity,
             )
             messages.append({"role": "system", "content": system_prompt})
             
@@ -365,10 +409,15 @@ async def speak_and_respond(
             })
             
             # Generate response
+            generation_settings = LanguageHelper.get_generation_settings(
+                difficulty=difficulty,
+                teaching_intensity=normalized_teaching_intensity,
+            )
             response_text = llm_handler.generate(
                 messages=messages,
-                max_tokens=256,
-                temperature=0.7
+                max_tokens=int(generation_settings["max_tokens"]),
+                temperature=generation_settings["temperature"],
+                top_p=generation_settings["top_p"],
             )
             
             logger.info(f"Response: {response_text}")
@@ -404,6 +453,8 @@ async def speak_and_respond(
             # Clean up temp file
             Path(temp_path).unlink(missing_ok=True)
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Speak and respond failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -436,6 +487,8 @@ async def get_available_voices():
     return {
         "voices": LanguageHelper.get_voice_catalog(),
         "voice_styles": sorted(LanguageHelper.VOICE_STYLE_OPTIONS),
-        "default_voice_style": "female",
+        "default_voice_style": settings.TTS_VOICE_STYLE,
+        "teaching_intensities": sorted(LanguageHelper.TEACHING_INTENSITY_OPTIONS),
+        "default_teaching_intensity": settings.TEACHING_INTENSITY,
         "explanation_language": LanguageHelper.EXPLANATION_LANGUAGE_CODE,
     }

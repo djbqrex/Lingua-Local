@@ -396,26 +396,64 @@ class LanguageLearningApp {
         try {
             this.disableInputs();
 
-            // Use the speak endpoint for complete workflow
-            const result = await API.speakAndRespond(
+            let assistantMessageDiv = null;
+            let assistantContentDiv = null;
+            let fullResponse = '';
+            let transcribedText = '';
+            let streamError = null;
+
+            // Use streaming endpoint for real-time response
+            await API.speakAndRespondStream(
                 audioBlob,
                 language,
                 difficulty,
                 scenario,
                 teachingIntensity,
-                this.sessionId
+                this.sessionId,
+                {
+                    onTranscription: (data) => {
+                        transcribedText = data.text || '';
+                        const textToShow = transcribedText || `[You spoke in ${data.language || language}]`;
+                        this.updateStatus(`You said: "${textToShow}"`, 'info');
+                        this.addMessage('user', textToShow);
+                    },
+                    onResponseStart: () => {
+                        this.updateStatus('Assistant is responding...', 'info');
+                        assistantMessageDiv = this.createMessageElement('assistant', '');
+                        assistantContentDiv = assistantMessageDiv.querySelector('.message-content');
+                        this.conversationHistory.appendChild(assistantMessageDiv);
+                    },
+                    onResponseChunk: (chunk) => {
+                        fullResponse += chunk;
+                        const displayChunk = this.stripSpeechTags(fullResponse);
+                        assistantContentDiv.innerHTML = `<strong>Assistant:</strong> ${this.escapeHtml(displayChunk)}`;
+                        this.conversationHistory.scrollTop = this.conversationHistory.scrollHeight;
+                    },
+                    onComplete: async (data) => {
+                        const fullScript = data.speech_script || data.full_response || fullResponse;
+                        const displayResponse = data.display_response || this.stripSpeechTags(fullScript);
+
+                        if (assistantContentDiv) {
+                            assistantContentDiv.innerHTML = `<strong>Assistant:</strong> ${this.escapeHtml(displayResponse)}`;
+                        }
+                        this.messages.push({ role: 'assistant', content: displayResponse });
+
+                        this.updateStatus('Speaking response...', 'info');
+                        await this.speakText(fullScript, language);
+
+                        this.updateStatus('Ready', 'success');
+                    },
+                    onError: (error) => {
+                        console.error('Streaming error:', error);
+                        streamError = error;
+                        this.addMessage('system', `Error: ${error}`);
+                        this.updateStatus('Error in conversation', 'error');
+                    }
+                }
             );
-
-            // Display the transcribed text if available, otherwise show language detection
-            const userMessage = result.transcribed_text || `[You spoke in ${result.detected_language || language}]`;
-            this.addMessage('user', userMessage);
-            this.addMessage('assistant', result.response);
-
-            // Synthesize and play response
-            await this.speakText(result.speech_script || result.response, language);
-
-            this.updateStatus('Ready', 'success');
-
+            if (streamError) {
+                throw new Error(streamError);
+            }
         } catch (error) {
             console.error('Voice processing error:', error);
             this.addMessage('system', `Error: ${error.message}`);
@@ -446,24 +484,56 @@ class LanguageLearningApp {
             // Add user message
             this.addMessage('user', message);
 
-            // Send to API
-            const result = await API.sendMessage(
+            let assistantMessageDiv = null;
+            let assistantContentDiv = null;
+            let fullResponse = '';
+            let streamError = null;
+
+            // Use streaming for text messages too
+            await API.sendMessageStream(
                 message,
                 language,
                 difficulty,
                 scenario,
                 teachingIntensity,
-                this.messages
+                this.messages,
+                {
+                    onStart: () => {
+                        assistantMessageDiv = this.createMessageElement('assistant', '');
+                        assistantContentDiv = assistantMessageDiv.querySelector('.message-content');
+                        this.conversationHistory.appendChild(assistantMessageDiv);
+                    },
+                    onChunk: (chunk) => {
+                        fullResponse += chunk;
+                        const displayChunk = this.stripSpeechTags(fullResponse);
+                        assistantContentDiv.innerHTML = `<strong>Assistant:</strong> ${this.escapeHtml(displayChunk)}`;
+                        this.conversationHistory.scrollTop = this.conversationHistory.scrollHeight;
+                    },
+                    onComplete: async (data) => {
+                        const fullScript = data.speech_script || data.full_response || fullResponse;
+                        const displayResponse = data.display_response || this.stripSpeechTags(fullScript);
+
+                        if (assistantContentDiv) {
+                            assistantContentDiv.innerHTML = `<strong>Assistant:</strong> ${this.escapeHtml(displayResponse)}`;
+                        }
+                        this.messages.push({ role: 'assistant', content: displayResponse });
+
+                        this.updateStatus('Speaking response...', 'info');
+                        await this.speakText(fullScript, language);
+
+                        this.updateStatus('Ready', 'success');
+                    },
+                    onError: (error) => {
+                        console.error('Streaming error:', error);
+                        streamError = error;
+                        this.addMessage('system', `Error: ${error}`);
+                        this.updateStatus('Error in conversation', 'error');
+                    }
+                }
             );
-
-            // Add assistant response
-            this.addMessage('assistant', result.response);
-
-            // Synthesize and play response
-            await this.speakText(result.speech_script || result.response, language);
-
-            this.updateStatus('Ready', 'success');
-
+            if (streamError) {
+                throw new Error(streamError);
+            }
         } catch (error) {
             console.error('Message error:', error);
             this.addMessage('system', `Error: ${error.message}`);
@@ -500,15 +570,9 @@ class LanguageLearningApp {
     }
 
     /**
-     * Add message to conversation history
+     * Create a message element without adding to messages array
      */
-    addMessage(role, content) {
-        // Add to messages array
-        if (role !== 'system') {
-            this.messages.push({ role, content });
-        }
-
-        // Create message element
+    createMessageElement(role, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
         
@@ -521,10 +585,33 @@ class LanguageLearningApp {
         contentDiv.innerHTML = `<strong>${roleLabel}:</strong> ${this.escapeHtml(content)}`;
         
         messageDiv.appendChild(contentDiv);
+        return messageDiv;
+    }
+
+    /**
+     * Add message element to conversation history
+     */
+    addMessageElement(role, content) {
+        const messageDiv = this.createMessageElement(role, content);
         this.conversationHistory.appendChild(messageDiv);
 
         // Scroll to bottom
         this.conversationHistory.scrollTop = this.conversationHistory.scrollHeight;
+        
+        return messageDiv;
+    }
+
+    /**
+     * Add message to conversation history
+     */
+    addMessage(role, content) {
+        // Add to messages array
+        if (role !== 'system') {
+            this.messages.push({ role, content });
+        }
+
+        // Create and add message element
+        this.addMessageElement(role, content);
     }
 
     /**
@@ -586,6 +673,17 @@ class LanguageLearningApp {
      */
     generateSessionId() {
         return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    /**
+     * Strip EN/TL speech tags from displayed text
+     */
+    stripSpeechTags(text) {
+        if (!text) return '';
+        return text
+            .replace(/\[\/?(EN|TL)\]/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     /**

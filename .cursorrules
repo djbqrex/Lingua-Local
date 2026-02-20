@@ -1,0 +1,135 @@
+# Cursor AI Rules for Lingua-Local Project
+
+## Project Overview
+This is a local language learning assistant using:
+- **Backend**: FastAPI (Python) with local AI models
+- **Frontend**: Vanilla JavaScript (no frameworks)
+- **Models**: Whisper (STT), Qwen/Llama (LLM), Piper (TTS)
+- **Deployment**: Docker with GPU support
+
+## Documentation Standards
+
+### DO NOT Create New Markdown Files
+- **Never create new .md files** unless explicitly requested by the user
+- All documentation should go into existing files:
+  - `README.md` - Main project documentation
+  - `QUICKSTART.md` - Quick start guide
+  - `SETUP.md` - Detailed setup and troubleshooting
+  - `HTTPS_SETUP.md` - HTTPS-specific setup (keep separate)
+  - `docs/` - Technical deep-dives only (architecture, design decisions)
+
+### Documentation Updates
+- **Bug fixes**: Add to SETUP.md troubleshooting section
+- **Performance tips**: Add to SETUP.md performance tuning section
+- **New features**: Update README.md and relevant setup docs
+- **Technical details**: Only if complex enough for `docs/` directory
+
+### Temporary Files
+- **Never create temporary documentation files** (e.g., BUGFIX_*.md, OPTIMIZATION_*.md)
+- If you need to document something temporarily, add it directly to the appropriate main doc
+- Delete any temporary files you create during work
+
+## Code Style
+
+### Backend (Python)
+- Follow PEP 8
+- Use type hints
+- Add docstrings to public functions/classes
+- Use async/await for I/O operations
+- Logging: Use `logger.info()`, `logger.error()` with `[TIMING]` prefix for performance logs
+
+### Frontend (JavaScript)
+- Vanilla JavaScript only (no frameworks)
+- ES6+ features
+- Use modules (`import`/`export`)
+- No build process required
+- Keep it simple and maintainable
+
+### Docker
+- Use multi-stage builds when appropriate
+- GPU Dockerfile must use `nvidia/cuda:12.1.0-devel-ubuntu22.04` (not runtime) for CUDA builds
+- Always include `cmake` in build dependencies for GPU builds
+- Build `llama-cpp-python` with `CMAKE_ARGS="-DLLAMA_CUBLAS=on"` for GPU support
+
+## Performance Considerations
+
+### Model Loading
+- Models are loaded once at startup and stay in memory (hot-loaded)
+- Never reload models between requests
+- Use `app.state` in FastAPI to store model handlers
+
+### Streaming
+- Always use streaming for LLM responses (token-by-token)
+- Use Server-Sent Events (SSE) for real-time updates
+- Add `[TIMING]` logs to identify bottlenecks
+
+### GPU Usage
+- Verify GPU is actually being used (not just available)
+- Check logs for GPU utilization
+- If LLM is slow (<10 tokens/sec), likely running on CPU
+
+## File Organization
+
+### Keep It Clean
+- Don't create unnecessary files
+- Don't duplicate information across multiple files
+- Consolidate related changes into existing files
+- Remove temporary files after work is complete
+
+### Directory Structure
+```
+backend/app/
+  ├── models/     # Model handlers (stt.py, llm.py, tts.py)
+  ├── routes/     # API endpoints
+  ├── utils/      # Utilities
+  └── main.py     # FastAPI app
+
+frontend/
+  ├── js/         # JavaScript modules
+  ├── css/        # Styles
+  └── index.html  # Main UI
+
+docs/             # Technical deep-dives only
+```
+
+## Common Tasks
+
+### Adding a Feature
+1. Implement the feature
+2. Update relevant documentation in existing files (README.md, SETUP.md)
+3. Add tests if applicable
+4. **Do NOT create new .md files**
+
+### Fixing a Bug
+1. Fix the bug
+2. Add troubleshooting info to SETUP.md if it's a common issue
+3. **Do NOT create BUGFIX_*.md files**
+
+### Performance Optimization
+1. Add `[TIMING]` logs to identify bottlenecks
+2. Optimize the code
+3. Update performance section in SETUP.md
+4. **Do NOT create OPTIMIZATION_*.md files**
+
+## When User Asks for Documentation
+
+- If they want a new doc: Create it, but suggest consolidating into existing docs
+- If they want technical details: Use `docs/` directory
+- If they want quick reference: Point to QUICKSTART.md or relevant section in SETUP.md
+
+## Important Notes
+
+- **Streaming is enabled by default** - no need to document it as a feature to enable
+- **Models stay hot in memory** - this is expected behavior, not a feature
+- **GPU Dockerfile requires devel image** - always use `devel` not `runtime` for CUDA builds
+- **Context window is optimized to 512** - good balance of speed and quality
+
+## Before Creating Any File
+
+Ask yourself:
+1. Does this information belong in an existing file?
+2. Is this temporary documentation that will be deleted?
+3. Is this complex enough to warrant a separate technical doc in `docs/`?
+
+If answer to #1 is yes, **don't create a new file**.
+

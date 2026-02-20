@@ -1,6 +1,7 @@
 """Speech-to-Text handler using Faster-Whisper."""
 
 import logging
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 import numpy as np
@@ -74,6 +75,9 @@ class STTHandler:
             raise RuntimeError("Model not loaded")
 
         try:
+            transcribe_start = time.perf_counter()
+            logger.info(f"[TIMING] STT: Starting transcription of {audio_path}")
+            
             segments, info = self.model.transcribe(
                 audio_path,
                 language=language,
@@ -82,8 +86,12 @@ class STTHandler:
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500)
             )
+            
+            transcribe_elapsed = time.perf_counter() - transcribe_start
+            logger.info(f"[TIMING] STT: Model transcription took {transcribe_elapsed:.3f}s (audio duration: {info.duration:.2f}s)")
 
             # Collect all segments
+            collect_start = time.perf_counter()
             transcription = []
             full_text = []
             
@@ -94,6 +102,9 @@ class STTHandler:
                     "text": segment.text.strip()
                 })
                 full_text.append(segment.text.strip())
+            
+            collect_elapsed = time.perf_counter() - collect_start
+            logger.info(f"[TIMING] STT: Segment collection took {collect_elapsed:.3f}s")
 
             result = {
                 "text": " ".join(full_text),
@@ -103,7 +114,8 @@ class STTHandler:
                 "duration": info.duration
             }
 
-            logger.info(f"Transcribed {len(transcription)} segments, detected language: {info.language}")
+            total_stt_elapsed = time.perf_counter() - transcribe_start
+            logger.info(f"[TIMING] STT: Total transcription: {total_stt_elapsed:.3f}s - Transcribed {len(transcription)} segments, detected language: {info.language}")
             return result
 
         except Exception as e:

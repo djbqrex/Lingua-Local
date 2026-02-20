@@ -15,7 +15,7 @@ class LLMHandler:
         self,
         model_name: str = "qwen2.5-1.5b-instruct",
         model_dir: Optional[Path] = None,
-        n_ctx: int = 2048,
+        n_ctx: int = 512,  # Reduced from 2048 for faster inference
         n_gpu_layers: int = -1
     ):
         """
@@ -80,6 +80,18 @@ class LLMHandler:
                 model_path.name
             )
             
+            # Log GPU usage info
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                    gpu_mem_allocated = torch.cuda.memory_allocated(0) / (1024**3)
+                    logger.info(f"GPU Memory: {gpu_mem_allocated:.2f}GB / {gpu_mem:.2f}GB")
+                else:
+                    logger.warning("CUDA not available - model running on CPU!")
+            except Exception as e:
+                logger.warning(f"Could not check GPU status: {e}")
+            
         except ImportError:
             logger.error("llama-cpp-python not installed")
             self.model = None
@@ -129,6 +141,68 @@ class LLMHandler:
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             return self._generate_fallback_response(messages)
+
+    def generate_stream(
+        self,
+        messages: List[Dict[str, str]],
+        max_tokens: int = 256,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        stop: Optional[List[str]] = None
+    ):
+        """
+        Generate a streaming response from the language model.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            top_p: Nucleus sampling parameter
+            stop: List of stop sequences
+
+        Yields:
+            Chunks of generated text as they become available
+        """
+        if self.model is None:
+            # Fallback response when model is not loaded
+            logger.warning("LLM model not loaded, using fallback response")
+            yield self._generate_fallback_response(messages)
+            return
+        
+        try:
+            llm_start = time.perf_counter()
+            logger.info(f"[TIMING] LLM: Starting generation (max_tokens={max_tokens})")
+            
+            response_stream = self.model.create_chat_completion(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop=stop or [],
+                stream=True
+            )
+            
+            first_chunk_time = None
+            chunk_count = 0
+            
+            for chunk in response_stream:
+                if "choices" in chunk and len(chunk["choices"]) > 0:
+                    delta = chunk["choices"][0].get("delta", {})
+                    if "content" in delta:
+                        if first_chunk_time is None:
+                            first_chunk_time = time.perf_counter()
+                            first_chunk_elapsed = first_chunk_time - llm_start
+                            logger.info(f"[TIMING] LLM: First token generated in {first_chunk_elapsed:.3f}s")
+                        chunk_count += 1
+                        yield delta["content"]
+            
+            if first_chunk_time:
+                total_elapsed = time.perf_counter() - llm_start
+                logger.info(f"[TIMING] LLM: Generated {chunk_count} chunks in {total_elapsed:.3f}s ({chunk_count/total_elapsed:.1f} chunks/sec)")
+            
+        except Exception as e:
+            logger.error(f"Streaming generation failed: {e}")
+            yield self._generate_fallback_response(messages)
 
     def _generate_fallback_response(self, messages: List[Dict[str, str]]) -> str:
         """Generate a fallback response when model is not available."""

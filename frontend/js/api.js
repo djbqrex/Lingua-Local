@@ -71,6 +71,93 @@ export class API {
     }
 
     /**
+     * Send text message and get streaming response
+     * @param {string} message - Text message
+     * @param {string} language - Target language
+     * @param {string} difficulty - Difficulty level
+     * @param {string} scenario - Conversation scenario
+     * @param {string} teachingIntensity - Teaching intensity
+     * @param {Array} history - Conversation history
+     * @param {Object} callbacks - Event callbacks
+     * @param {Function} callbacks.onStart - Called when response starts
+     * @param {Function} callbacks.onChunk - Called for each response chunk
+     * @param {Function} callbacks.onComplete - Called with full response
+     * @param {Function} callbacks.onError - Called on error
+     */
+    static async sendMessageStream(
+        message,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        history = [],
+        callbacks = {}
+    ) {
+        const response = await fetch(`${API_BASE}/conversation/text-stream`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message,
+                language,
+                difficulty,
+                scenario,
+                teaching_intensity: teachingIntensity,
+                history
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+
+        // Process Server-Sent Events
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep incomplete line in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.substring(6);
+                    try {
+                        const data = JSON.parse(dataStr);
+                        
+                        if (data.status === 'generating') {
+                            if (callbacks.onStart) {
+                                callbacks.onStart();
+                            }
+                        } else if (data.chunk) {
+                            if (callbacks.onChunk) {
+                                callbacks.onChunk(data.chunk);
+                            }
+                        } else if (data.full_response) {
+                            if (callbacks.onComplete) {
+                                callbacks.onComplete(data);
+                            }
+                        } else if (data.error) {
+                            if (callbacks.onError) {
+                                callbacks.onError(data.error);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse SSE data:', e, dataStr);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Transcribe audio to text
      */
     static async transcribeAudio(audioBlob, language = null) {
@@ -174,6 +261,111 @@ export class API {
         }
 
         return await response.json();
+    }
+
+    /**
+     * Streaming conversation: send audio, receive streamed response
+     * @param {Blob} audioBlob - Audio recording
+     * @param {string} language - Target language
+     * @param {string} difficulty - Difficulty level
+     * @param {string} scenario - Conversation scenario
+     * @param {string} teachingIntensity - Teaching intensity
+     * @param {string|null} sessionId - Session ID
+     * @param {Object} callbacks - Event callbacks
+     * @param {Function} callbacks.onTranscription - Called with transcription result
+     * @param {Function} callbacks.onResponseStart - Called when response generation starts
+     * @param {Function} callbacks.onResponseChunk - Called for each response chunk
+     * @param {Function} callbacks.onComplete - Called with full response
+     * @param {Function} callbacks.onError - Called on error
+     */
+    static async speakAndRespondStream(
+        audioBlob,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        sessionId = null,
+        callbacks = {}
+    ) {
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.wav');
+        formData.append('language', language);
+        formData.append('difficulty', difficulty);
+        formData.append('scenario', scenario);
+        formData.append('teaching_intensity', teachingIntensity);
+        if (sessionId) {
+            formData.append('session_id', sessionId);
+        }
+
+        const response = await fetch(`${API_BASE}/conversation/speak-stream`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`Conversation error: ${response.statusText}`);
+        }
+
+        // Process Server-Sent Events
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep incomplete line in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    const eventType = line.substring(7).trim();
+                    continue;
+                }
+                
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.substring(6);
+                    try {
+                        const data = JSON.parse(dataStr);
+                        
+                        // Determine event type from previous line or current data
+                        if (data.status === 'transcribing') {
+                            // Start event
+                        } else if (data.text && data.language && 'language' in data) {
+                            // Transcription event
+                            if (callbacks.onTranscription) {
+                                callbacks.onTranscription(data);
+                            }
+                        } else if (data.status === 'generating') {
+                            // Response start
+                            if (callbacks.onResponseStart) {
+                                callbacks.onResponseStart();
+                            }
+                        } else if (data.chunk) {
+                            // Response chunk
+                            if (callbacks.onResponseChunk) {
+                                callbacks.onResponseChunk(data.chunk);
+                            }
+                        } else if (data.full_response) {
+                            // Complete
+                            if (callbacks.onComplete) {
+                                callbacks.onComplete(data);
+                            }
+                        } else if (data.error) {
+                            // Error
+                            if (callbacks.onError) {
+                                callbacks.onError(data.error);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse SSE data:', e, dataStr);
+                    }
+                }
+            }
+        }
     }
 
     /**

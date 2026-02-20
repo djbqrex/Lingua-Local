@@ -2,8 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
-import wave
+from typing import Dict, List, Optional
 import io
 
 logger = logging.getLogger(__name__)
@@ -11,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 class TTSHandler:
     """Handler for text-to-speech conversion using Piper TTS."""
+    DEFAULT_FALLBACK_VOICE = "en_US-lessac-medium"
 
     def __init__(self, voice: str = "en_US-lessac-medium", model_dir: Optional[Path] = None):
         """
@@ -23,44 +23,37 @@ class TTSHandler:
         self.voice = voice
         self.model_dir = model_dir or Path(__file__).parent.parent.parent.parent / "models" / "tts"
         self.model_dir.mkdir(parents=True, exist_ok=True)
+        self.voice_models: Dict[str, Dict[str, object]] = {}
         self.voice_model = None
         self._load_model()
 
     def _load_model(self):
         """Load the Piper TTS model."""
         try:
-            # Import piper_tts
-            import subprocess
-            import sys
-            
-            # Check if piper is available as command (for now, we'll use a fallback)
-            logger.info(f"Initializing Piper TTS with voice: {self.voice}")
-            
-            # Note: Piper TTS is typically used as a command-line tool
-            # For Python integration, we'll check if the model exists
-            model_path = self.model_dir / f"{self.voice}.onnx"
-            config_path = self.model_dir / f"{self.voice}.onnx.json"
-            
-            if not model_path.exists() or not config_path.exists():
-                logger.info(f"Model not found at {model_path}. Attempting to download...")
-                # Try to download the voice model
-                self._download_voice(self.voice)
-                # Re-check after download attempt
-                if not model_path.exists() or not config_path.exists():
-                    logger.warning(f"Model still not found after download attempt. Will use fallback.")
-            
-            self.voice_model = {
-                "model_path": model_path,
-                "config_path": config_path,
-                "voice": self.voice
-            }
-            
+            logger.info("Initializing Piper TTS with voice: %s", self.voice)
+            self.voice_model = self._ensure_voice_model(self.voice)
             logger.info("Piper TTS handler initialized")
-            
         except Exception as e:
             logger.error(f"Failed to initialize Piper TTS: {e}")
             raise
-    
+
+    def _ensure_voice_model(self, voice: str) -> Dict[str, object]:
+        """Ensure a voice model is available locally."""
+        model_path = self.model_dir / f"{voice}.onnx"
+        config_path = self.model_dir / f"{voice}.onnx.json"
+
+        if not model_path.exists() or not config_path.exists():
+            logger.info("Voice model %s not found. Attempting download...", voice)
+            self._download_voice(voice)
+
+        voice_model = {
+            "model_path": model_path,
+            "config_path": config_path,
+            "voice": voice
+        }
+        self.voice_models[voice] = voice_model
+        return voice_model
+
     def _download_voice(self, voice: str) -> bool:
         """Download a Piper TTS voice model."""
         try:
@@ -77,7 +70,8 @@ class TTSHandler:
         self,
         text: str,
         output_path: Optional[str] = None,
-        length_scale: Optional[float] = None
+        length_scale: Optional[float] = None,
+        voice: Optional[str] = None
     ) -> bytes:
         """
         Synthesize speech from text.
@@ -86,66 +80,129 @@ class TTSHandler:
             text: Text to synthesize
             output_path: Optional path to save audio file
             length_scale: Optional Piper length scale (higher = slower)
+            voice: Optional voice id override for this utterance
 
         Returns:
             Audio data as bytes (WAV format)
         """
+        created_temp_file = False
+        synth_output_path = output_path
+
         try:
             import subprocess
             import tempfile
-            
+
+            active_voice = voice or self.voice
+            voice_model = self._ensure_voice_model(active_voice)
+
             # Use piper command line tool
-            if output_path is None:
-                output_path = tempfile.mktemp(suffix=".wav")
-            
-            model_path = self.voice_model["model_path"]
-            config_path = self.voice_model["config_path"]
-            
+            if synth_output_path is None:
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+                synth_output_path = temp_file.name
+                temp_file.close()
+                created_temp_file = True
+
+            model_path = voice_model["model_path"]
+            config_path = voice_model["config_path"]
+
             if not model_path.exists() or not config_path.exists():
-                # Try to download the voice model first
-                logger.info(f"Voice model {self.voice} not found. Attempting to download...")
-                if self._download_voice(self.voice):
-                    # Reload model info after download
-                    model_path = self.model_dir / f"{self.voice}.onnx"
-                    config_path = self.model_dir / f"{self.voice}.onnx.json"
-                    self.voice_model["model_path"] = model_path
-                    self.voice_model["config_path"] = config_path
-                
-                # If still not found after download attempt, use fallback
-                if not model_path.exists() or not config_path.exists():
-                    logger.warning("Piper model not found after download attempt. Using fallback audio generation.")
-                    return self._generate_fallback_audio(text)
-            
+                logger.warning("Voice model %s unavailable, using fallback audio", active_voice)
+                return self._generate_fallback_audio(text)
+
             # Run piper
             cmd = [
                 "piper",
                 "--model", str(model_path),
-                "--output_file", output_path
+                "--output_file", synth_output_path
             ]
             if length_scale and length_scale > 0:
                 cmd.extend(["--length_scale", f"{length_scale:.2f}"])
-            
-            result = subprocess.run(
+
+            subprocess.run(
                 cmd,
-                input=text.encode(),
+                input=text.encode("utf-8"),
                 capture_output=True,
                 check=True
             )
-            
+
             # Read the generated audio
-            with open(output_path, "rb") as f:
+            with open(synth_output_path, "rb") as f:
                 audio_data = f.read()
-            
-            logger.info(f"Synthesized {len(text)} characters to audio")
+
+            logger.info(
+                "Synthesized %s characters with voice %s",
+                len(text),
+                active_voice,
+            )
             return audio_data
-            
+
         except subprocess.CalledProcessError as e:
-            logger.error(f"Piper synthesis failed: {e}")
-            # Fallback to simple audio
+            stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
+            logger.error("Piper synthesis failed: %s; stderr=%s", e, stderr)
             return self._generate_fallback_audio(text, length_scale)
         except Exception as e:
             logger.error(f"TTS synthesis failed: {e}")
             return self._generate_fallback_audio(text, length_scale)
+        finally:
+            if synth_output_path and created_temp_file:
+                Path(synth_output_path).unlink(missing_ok=True)
+
+    def synthesize_segments(
+        self,
+        segments: List[Dict[str, str]],
+        voice_for_language: Dict[str, str],
+        length_scale: Optional[float] = None,
+    ) -> bytes:
+        """
+        Synthesize multiple segments with language-specific voices.
+
+        Args:
+            segments: List of {"text": str, "language": str}
+            voice_for_language: Mapping from language code to Piper voice id
+            length_scale: Optional Piper length scale (higher = slower)
+        """
+        import numpy as np
+        from ..utils.audio import AudioProcessor
+
+        if not segments:
+            return self._generate_fallback_audio("")
+
+        target_sample_rate = 22050
+        pause = np.zeros(int(target_sample_rate * 0.16), dtype=np.float32)
+        rendered_audio: List[np.ndarray] = []
+
+        for segment in segments:
+            segment_text = (segment.get("text") or "").strip()
+            segment_language = (segment.get("language") or "").lower()
+            if not segment_text:
+                continue
+
+            chosen_voice = voice_for_language.get(segment_language, self.voice)
+            chunk_bytes = self.synthesize(
+                text=segment_text,
+                length_scale=length_scale,
+                voice=chosen_voice,
+            )
+            chunk_audio = AudioProcessor.bytes_to_audio(
+                audio_bytes=chunk_bytes,
+                sample_rate=target_sample_rate,
+            )
+            if chunk_audio.size == 0:
+                continue
+            rendered_audio.append(chunk_audio.astype(np.float32))
+
+        if not rendered_audio:
+            return self._generate_fallback_audio("")
+
+        merged_chunks: List[np.ndarray] = []
+        for index, chunk in enumerate(rendered_audio):
+            if index > 0:
+                merged_chunks.append(pause)
+            merged_chunks.append(chunk)
+
+        combined = np.concatenate(merged_chunks)
+        combined = AudioProcessor.normalize_audio(combined, target_level=0.9)
+        return AudioProcessor.audio_to_bytes(combined, sample_rate=target_sample_rate, format="WAV")
 
     def _generate_fallback_audio(self, text: str, length_scale: Optional[float] = None) -> bytes:
         """Generate a simple fallback audio (silence) for testing."""
@@ -178,9 +235,9 @@ class TTSHandler:
                 if not model_file.name.endswith(".json"):
                     voice_name = model_file.stem
                     voices.append(voice_name)
-        return voices or ["en_US-lessac-medium"]  # Default voice
+        return voices or [self.DEFAULT_FALLBACK_VOICE]
 
     def set_voice(self, voice: str):
         """Change the active voice."""
         self.voice = voice
-        self._load_model()
+        self.voice_model = self._ensure_voice_model(voice)

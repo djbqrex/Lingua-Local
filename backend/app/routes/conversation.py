@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from ..config import settings
+from ..utils.language import LanguageHelper
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +32,9 @@ class ConversationRequest(BaseModel):
     message: str
     language: str = "en"
     difficulty: str = "beginner"
+    teaching_intensity: str = settings.TEACHING_INTENSITY
     scenario: str = "greeting"
-    history: List[ConversationMessage] = []
+    history: List[ConversationMessage] = Field(default_factory=list)
 
 
 class ConversationResponse(BaseModel):
@@ -39,6 +43,8 @@ class ConversationResponse(BaseModel):
     language: str
     detected_language: Optional[str] = None
     transcribed_text: Optional[str] = None
+    speech_script: Optional[str] = None
+    speech_segments: List[Dict[str, str]] = Field(default_factory=list)
 
 
 class TranscriptionResponse(BaseModel):
@@ -53,6 +59,43 @@ class TranscriptionResponse(BaseModel):
 conversation_sessions: Dict[str, List[ConversationMessage]] = {}
 
 
+def _resolve_default_speech_scale(difficulty: str, teaching_intensity: str) -> float:
+    """Resolve default speech speed for learner comfort."""
+    base_scale = {
+        "beginner": settings.BEGINNER_SPEECH_RATE,
+        "intermediate": settings.INTERMEDIATE_SPEECH_RATE,
+        "advanced": settings.ADVANCED_SPEECH_RATE,
+    }.get(difficulty.lower(), settings.BEGINNER_SPEECH_RATE)
+
+    intensity = LanguageHelper.normalize_teaching_intensity(teaching_intensity)
+    if intensity == "deep":
+        return min(2.0, base_scale + 0.08)
+    if intensity == "light":
+        return max(0.95, base_scale - 0.08)
+    return base_scale
+
+
+def _prepare_speech_response(response_text: str, target_language: str) -> Dict[str, object]:
+    """Prepare clean display text and language-tagged segments for TTS."""
+    speech_script = response_text or ""
+    clean_response = LanguageHelper.strip_speech_tags(speech_script) or speech_script
+    speech_segments = LanguageHelper.split_speech_segments(
+        text=speech_script,
+        target_language=target_language,
+        explanation_language=LanguageHelper.EXPLANATION_LANGUAGE_CODE,
+    )
+    if not speech_segments and clean_response:
+        speech_segments = [{
+            "text": clean_response,
+            "language": target_language.lower(),
+        }]
+    return {
+        "response": clean_response,
+        "speech_script": speech_script,
+        "speech_segments": speech_segments,
+    }
+
+
 @router.post("/text", response_model=ConversationResponse)
 async def text_conversation(request: ConversationRequest):
     """
@@ -65,10 +108,12 @@ async def text_conversation(request: ConversationRequest):
         Assistant's response
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         llm_handler = app.state.llm_handler
+        if llm_handler is None:
+            raise HTTPException(status_code=503, detail="LLM model is not available")
+        teaching_intensity = LanguageHelper.normalize_teaching_intensity(request.teaching_intensity)
         
         # Build conversation history
         messages = []
@@ -77,7 +122,8 @@ async def text_conversation(request: ConversationRequest):
         system_prompt = LanguageHelper.format_system_prompt(
             language=request.language,
             difficulty=request.difficulty,
-            scenario=request.scenario
+            scenario=request.scenario,
+            teaching_intensity=teaching_intensity,
         )
         messages.append({"role": "system", "content": system_prompt})
         
@@ -95,17 +141,27 @@ async def text_conversation(request: ConversationRequest):
         })
         
         # Generate response
+        generation_settings = LanguageHelper.get_generation_settings(
+            difficulty=request.difficulty,
+            teaching_intensity=teaching_intensity,
+        )
         response_text = llm_handler.generate(
             messages=messages,
-            max_tokens=256,
-            temperature=0.7
+            max_tokens=int(generation_settings["max_tokens"]),
+            temperature=generation_settings["temperature"],
+            top_p=generation_settings["top_p"],
         )
         
+        prepared_response = _prepare_speech_response(response_text, request.language)
         return ConversationResponse(
-            response=response_text,
-            language=request.language
+            response=prepared_response["response"],
+            language=request.language,
+            speech_script=prepared_response["speech_script"],
+            speech_segments=prepared_response["speech_segments"],
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Text conversation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -123,11 +179,13 @@ async def text_conversation_stream(request: ConversationRequest):
         Server-Sent Events stream with response chunks
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     async def event_generator():
         try:
             llm_handler = app.state.llm_handler
+            if llm_handler is None:
+                raise RuntimeError("LLM model is not available")
+            teaching_intensity = LanguageHelper.normalize_teaching_intensity(request.teaching_intensity)
             
             # Build conversation history
             messages = []
@@ -136,7 +194,8 @@ async def text_conversation_stream(request: ConversationRequest):
             system_prompt = LanguageHelper.format_system_prompt(
                 language=request.language,
                 difficulty=request.difficulty,
-                scenario=request.scenario
+                scenario=request.scenario,
+                teaching_intensity=teaching_intensity,
             )
             messages.append({"role": "system", "content": system_prompt})
             
@@ -158,16 +217,22 @@ async def text_conversation_stream(request: ConversationRequest):
             
             # Stream LLM response
             full_response = ""
+            generation_settings = LanguageHelper.get_generation_settings(
+                difficulty=request.difficulty,
+                teaching_intensity=teaching_intensity,
+            )
             for chunk in llm_handler.generate_stream(
                 messages=messages,
-                max_tokens=256,
-                temperature=0.7
+                max_tokens=int(generation_settings["max_tokens"]),
+                temperature=generation_settings["temperature"],
+                top_p=generation_settings["top_p"],
             ):
                 full_response += chunk
                 yield f"event: chunk\ndata: {json.dumps({'chunk': chunk})}\n\n"
             
             # Send completion event
-            yield f"event: complete\ndata: {json.dumps({'full_response': full_response, 'language': request.language})}\n\n"
+            display_response = LanguageHelper.strip_speech_tags(full_response) or full_response
+            yield f"event: complete\ndata: {json.dumps({'full_response': full_response, 'speech_script': full_response, 'display_response': display_response, 'language': request.language})}\n\n"
             
         except Exception as e:
             logger.error(f"Streaming text conversation failed: {e}")
@@ -200,10 +265,11 @@ async def transcribe_audio(
         Transcription result
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         stt_handler = app.state.stt_handler
+        if stt_handler is None:
+            raise HTTPException(status_code=503, detail="STT model is not available")
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
@@ -234,6 +300,8 @@ async def transcribe_audio(
             # Clean up temp file
             Path(temp_path).unlink(missing_ok=True)
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Transcription failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -244,7 +312,12 @@ async def synthesize_speech(
     text: str = Form(...),
     language: str = Form("en"),
     voice: Optional[str] = Form(None),
-    speech_rate: Optional[float] = Form(None)
+    speech_rate: Optional[float] = Form(None),
+    voice_style: Optional[str] = Form(settings.TTS_VOICE_STYLE),
+    explanation_voice: Optional[str] = Form(None),
+    explanation_language: str = Form(LanguageHelper.EXPLANATION_LANGUAGE_CODE),
+    difficulty: str = Form("beginner"),
+    teaching_intensity: str = Form(settings.TEACHING_INTENSITY),
 ):
     """
     Synthesize speech from text.
@@ -252,27 +325,70 @@ async def synthesize_speech(
     Args:
         text: Text to synthesize
         language: Target language code
-        voice: Specific voice to use (optional)
+        voice: Target-language voice override (optional)
+        speech_rate: Piper length_scale (higher = slower)
+        voice_style: "female" or "male" voice profile preference
+        explanation_voice: Explanation-language voice override (optional)
+        explanation_language: Language used for explanatory text
+        difficulty: Conversation difficulty for pace defaults
+        teaching_intensity: light, standard, or deep teaching detail
         
     Returns:
         Audio file (WAV)
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         tts_handler = app.state.tts_handler
-        
-        # Get appropriate voice for language
-        if not voice:
-            voice = LanguageHelper.get_tts_voice(language)
-        
-        # Set voice if different from current
-        if voice != tts_handler.voice:
-            tts_handler.set_voice(voice)
-        
-        # Synthesize
-        audio_data = tts_handler.synthesize(text, length_scale=speech_rate)
+        if tts_handler is None:
+            raise HTTPException(status_code=503, detail="TTS model is not available")
+        normalized_teaching_intensity = LanguageHelper.normalize_teaching_intensity(teaching_intensity)
+
+        selected_voices = LanguageHelper.get_bilingual_voices(
+            target_language=language,
+            voice_style=voice_style,
+            target_preference=voice,
+            explanation_preference=explanation_voice or settings.TTS_EXPLANATION_VOICE,
+            explanation_language=explanation_language,
+        )
+
+        segments = LanguageHelper.split_speech_segments(
+            text=text,
+            target_language=language,
+            explanation_language=selected_voices["explanation_language"],
+        )
+        if not segments:
+            stripped_text = LanguageHelper.strip_speech_tags(text) or text
+            segments = [{"text": stripped_text, "language": language.lower()}]
+
+        speech_scale = speech_rate
+        if speech_scale is None:
+            speech_scale = _resolve_default_speech_scale(
+                difficulty=difficulty,
+                teaching_intensity=normalized_teaching_intensity,
+            )
+
+        voice_map = {
+            selected_voices["target_language"]: selected_voices["target_voice"],
+            selected_voices["explanation_language"]: selected_voices["explanation_voice"],
+        }
+
+        uses_multiple_languages = any(
+            segment["language"] != selected_voices["target_language"]
+            for segment in segments
+        )
+        if uses_multiple_languages or len(segments) > 1:
+            audio_data = tts_handler.synthesize_segments(
+                segments=segments,
+                voice_for_language=voice_map,
+                length_scale=speech_scale,
+            )
+        else:
+            audio_data = tts_handler.synthesize(
+                text=segments[0]["text"],
+                voice=selected_voices["target_voice"],
+                length_scale=speech_scale,
+            )
         
         return Response(
             content=audio_data,
@@ -282,6 +398,8 @@ async def synthesize_speech(
             }
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Speech synthesis failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -292,6 +410,7 @@ async def speak_and_respond(
     audio: UploadFile = File(...),
     language: str = Form("en"),
     difficulty: str = Form("beginner"),
+    teaching_intensity: str = Form(settings.TEACHING_INTENSITY),
     scenario: str = Form("greeting"),
     session_id: Optional[str] = Form(None)
 ):
@@ -303,6 +422,7 @@ async def speak_and_respond(
         audio: Audio file with user's speech
         language: Target language
         difficulty: Difficulty level
+        teaching_intensity: light, standard, or deep teaching detail
         scenario: Conversation scenario
         session_id: Optional session ID for maintaining context
         
@@ -310,11 +430,15 @@ async def speak_and_respond(
         Transcribed user text and assistant's response
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     try:
         stt_handler = app.state.stt_handler
         llm_handler = app.state.llm_handler
+        if stt_handler is None:
+            raise HTTPException(status_code=503, detail="STT model is not available")
+        if llm_handler is None:
+            raise HTTPException(status_code=503, detail="LLM model is not available")
+        normalized_teaching_intensity = LanguageHelper.normalize_teaching_intensity(teaching_intensity)
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
@@ -351,7 +475,8 @@ async def speak_and_respond(
             system_prompt = LanguageHelper.format_system_prompt(
                 language=language,
                 difficulty=difficulty,
-                scenario=scenario
+                scenario=scenario,
+                teaching_intensity=normalized_teaching_intensity,
             )
             messages.append({"role": "system", "content": system_prompt})
             
@@ -369,14 +494,21 @@ async def speak_and_respond(
             })
             
             # Generate response
+            generation_settings = LanguageHelper.get_generation_settings(
+                difficulty=difficulty,
+                teaching_intensity=normalized_teaching_intensity,
+            )
             response_text = llm_handler.generate(
                 messages=messages,
-                max_tokens=256,
-                temperature=0.7
+                max_tokens=int(generation_settings["max_tokens"]),
+                temperature=generation_settings["temperature"],
+                top_p=generation_settings["top_p"],
             )
             
             logger.info(f"Response: {response_text}")
             
+            prepared_response = _prepare_speech_response(response_text, language)
+
             # Update session history
             history.append(ConversationMessage(
                 role="user",
@@ -385,7 +517,7 @@ async def speak_and_respond(
             ))
             history.append(ConversationMessage(
                 role="assistant",
-                content=response_text,
+                content=prepared_response["response"],
                 language=language
             ))
             
@@ -394,16 +526,20 @@ async def speak_and_respond(
                 conversation_sessions[session_id] = history[-20:]
             
             return ConversationResponse(
-                response=response_text,
+                response=prepared_response["response"],
                 language=language,
                 detected_language=detected_language,
-                transcribed_text=user_text
+                transcribed_text=user_text,
+                speech_script=prepared_response["speech_script"],
+                speech_segments=prepared_response["speech_segments"],
             )
             
         finally:
             # Clean up temp file
             Path(temp_path).unlink(missing_ok=True)
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Speak and respond failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -435,6 +571,7 @@ async def speak_and_respond_stream(
     audio: UploadFile = File(...),
     language: str = Form("en"),
     difficulty: str = Form("beginner"),
+    teaching_intensity: str = Form(settings.TEACHING_INTENSITY),
     scenario: str = Form("greeting"),
     session_id: Optional[str] = Form(None)
 ):
@@ -445,6 +582,7 @@ async def speak_and_respond_stream(
         audio: Audio file with user's speech
         language: Target language
         difficulty: Difficulty level
+        teaching_intensity: light, standard, or deep teaching detail
         scenario: Conversation scenario
         session_id: Optional session ID for maintaining context
         
@@ -452,7 +590,6 @@ async def speak_and_respond_stream(
         Server-Sent Events stream with transcription and response chunks
     """
     from ..main import app
-    from ..utils.language import LanguageHelper
     
     # Start timing
     request_start_time = time.perf_counter()
@@ -506,6 +643,7 @@ async def speak_and_respond_stream(
             logger.info(f"[TIMING] Event generator started at {generator_start:.3f}s (elapsed: {generator_start - request_start_time:.3f}s)")
             stt_handler = app.state.stt_handler
             llm_handler = app.state.llm_handler
+            normalized_teaching_intensity = LanguageHelper.normalize_teaching_intensity(teaching_intensity)
             
             if stt_handler is None:
                 raise RuntimeError("STT handler not initialized")
@@ -566,11 +704,18 @@ async def speak_and_respond_stream(
             messages = []
             
             # System prompt
-            logger.info(f"[TIMING] Building context (language={language}, difficulty={difficulty}, scenario={scenario})")
+            logger.info(
+                "[TIMING] Building context (language=%s, difficulty=%s, intensity=%s, scenario=%s)",
+                language,
+                difficulty,
+                normalized_teaching_intensity,
+                scenario,
+            )
             system_prompt = LanguageHelper.format_system_prompt(
                 language=language,
                 difficulty=difficulty,
-                scenario=scenario
+                scenario=scenario,
+                teaching_intensity=normalized_teaching_intensity,
             )
             messages.append({"role": "system", "content": system_prompt})
             
@@ -600,10 +745,15 @@ async def speak_and_respond_stream(
             chunk_count = 0
             first_chunk_time = None
             try:
+                generation_settings = LanguageHelper.get_generation_settings(
+                    difficulty=difficulty,
+                    teaching_intensity=normalized_teaching_intensity,
+                )
                 for chunk in llm_handler.generate_stream(
                     messages=messages,
-                    max_tokens=256,
-                    temperature=0.7
+                    max_tokens=int(generation_settings["max_tokens"]),
+                    temperature=generation_settings["temperature"],
+                    top_p=generation_settings["top_p"],
                 ):
                     if first_chunk_time is None:
                         first_chunk_time = time.perf_counter()
@@ -622,6 +772,7 @@ async def speak_and_respond_stream(
                 raise
             
             logger.info(f"[TIMING] Full response: '{full_response}'")
+            prepared_response = _prepare_speech_response(full_response, language)
             
             # Update session history
             history_start = time.perf_counter()
@@ -632,7 +783,7 @@ async def speak_and_respond_stream(
             ))
             history.append(ConversationMessage(
                 role="assistant",
-                content=full_response,
+                content=prepared_response["response"],
                 language=language
             ))
             
@@ -645,7 +796,10 @@ async def speak_and_respond_stream(
             # Send completion event
             completion_time = time.perf_counter()
             logger.info(f"[TIMING] Sending completion event at {completion_time:.3f}s")
-            yield f"event: complete\ndata: {json.dumps({'full_response': full_response, 'language': language})}\n\n"
+            yield (
+                "event: complete\ndata: "
+                f"{json.dumps({'full_response': full_response, 'speech_script': prepared_response['speech_script'], 'display_response': prepared_response['response'], 'language': language})}\n\n"
+            )
             
             total_elapsed = time.perf_counter() - request_start_time
             logger.info(f"[TIMING] Event generator completed: Total elapsed: {total_elapsed:.3f}s")
@@ -677,8 +831,11 @@ async def speak_and_respond_stream(
 @router.get("/voices")
 async def get_available_voices():
     """Get list of available TTS voices."""
-    from ..utils.language import LanguageHelper
-    
     return {
-        "voices": LanguageHelper.TTS_VOICES
+        "voices": LanguageHelper.get_voice_catalog(),
+        "voice_styles": sorted(LanguageHelper.VOICE_STYLE_OPTIONS),
+        "default_voice_style": settings.TTS_VOICE_STYLE,
+        "teaching_intensities": sorted(LanguageHelper.TEACHING_INTENSITY_OPTIONS),
+        "default_teaching_intensity": settings.TEACHING_INTENSITY,
+        "explanation_language": LanguageHelper.EXPLANATION_LANGUAGE_CODE,
     }

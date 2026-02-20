@@ -34,12 +34,31 @@
             </div>
 
             <div class="setting-group">
+                <label for="voice-style-select">Voice Style:</label>
+                <select id="voice-style-select">
+                    <option value="female" selected>Female (if available)</option>
+                    <option value="male">Male (if available)</option>
+                </select>
+                <span class="setting-hint">Applied to both English explanations and target language speech</span>
+            </div>
+
+            <div class="setting-group">
                 <label for="difficulty-select">Difficulty:</label>
                 <select id="difficulty-select">
                     <option value="beginner" selected>Beginner</option>
                     <option value="intermediate">Intermediate</option>
                     <option value="advanced">Advanced</option>
                 </select>
+            </div>
+
+            <div class="setting-group">
+                <label for="teaching-intensity-select">Teaching Intensity:</label>
+                <select id="teaching-intensity-select">
+                    <option value="light">Light (quick phrase + pronunciation)</option>
+                    <option value="standard" selected>Standard (step-by-step)</option>
+                    <option value="deep">Deep (extra breakdown + practice)</option>
+                </select>
+                <span class="setting-hint">Controls explanation depth for each reply</span>
             </div>
 
             <div class="setting-group">

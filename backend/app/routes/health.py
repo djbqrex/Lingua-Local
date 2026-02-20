@@ -57,12 +57,16 @@ async def models_status() -> Dict[str, Any]:
 async def supported_languages() -> Dict[str, Any]:
     """Get list of supported languages."""
     from ..utils.language import LanguageHelper
-    
+
+    voice_catalog = LanguageHelper.get_voice_catalog()
     languages = {}
     for code in LanguageHelper.get_supported_languages():
         languages[code] = {
             "name": LanguageHelper.get_language_name(code),
-            "tts_voices": LanguageHelper.TTS_VOICES.get(code, [])
+            "tts_voices": [entry["id"] for entry in voice_catalog.get(code, [])],
+            "tts_voice_details": voice_catalog.get(code, []),
+            "default_voice_female": LanguageHelper.get_tts_voice(code, voice_style="female"),
+            "default_voice_male": LanguageHelper.get_tts_voice(code, voice_style="male"),
         }
     
     return {

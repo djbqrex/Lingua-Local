@@ -40,7 +40,14 @@ export class API {
     /**
      * Send text message and get response
      */
-    static async sendMessage(message, language, difficulty, scenario, history = []) {
+    static async sendMessage(
+        message,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        history = []
+    ) {
         const response = await fetch(`${API_BASE}/conversation/text`, {
             method: 'POST',
             headers: {
@@ -51,6 +58,7 @@ export class API {
                 language,
                 difficulty,
                 scenario,
+                teaching_intensity: teachingIntensity,
                 history
             })
         });
@@ -68,6 +76,7 @@ export class API {
      * @param {string} language - Target language
      * @param {string} difficulty - Difficulty level
      * @param {string} scenario - Conversation scenario
+     * @param {string} teachingIntensity - Teaching intensity
      * @param {Array} history - Conversation history
      * @param {Object} callbacks - Event callbacks
      * @param {Function} callbacks.onStart - Called when response starts
@@ -75,7 +84,15 @@ export class API {
      * @param {Function} callbacks.onComplete - Called with full response
      * @param {Function} callbacks.onError - Called on error
      */
-    static async sendMessageStream(message, language, difficulty, scenario, history = [], callbacks = {}) {
+    static async sendMessageStream(
+        message,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        history = [],
+        callbacks = {}
+    ) {
         const response = await fetch(`${API_BASE}/conversation/text-stream`, {
             method: 'POST',
             headers: {
@@ -86,6 +103,7 @@ export class API {
                 language,
                 difficulty,
                 scenario,
+                teaching_intensity: teachingIntensity,
                 history
             })
         });
@@ -164,7 +182,17 @@ export class API {
     /**
      * Synthesize speech from text
      */
-    static async synthesizeSpeech(text, language, voice = null, speechRate = null) {
+    static async synthesizeSpeech(
+        text,
+        language,
+        voice = null,
+        speechRate = null,
+        voiceStyle = 'female',
+        explanationLanguage = 'en',
+        difficulty = 'beginner',
+        teachingIntensity = 'standard',
+        explanationVoice = null
+    ) {
         const formData = new FormData();
         formData.append('text', text);
         formData.append('language', language);
@@ -173,6 +201,21 @@ export class API {
         }
         if (speechRate !== null && speechRate !== undefined) {
             formData.append('speech_rate', speechRate.toString());
+        }
+        if (voiceStyle) {
+            formData.append('voice_style', voiceStyle);
+        }
+        if (explanationLanguage) {
+            formData.append('explanation_language', explanationLanguage);
+        }
+        if (difficulty) {
+            formData.append('difficulty', difficulty);
+        }
+        if (teachingIntensity) {
+            formData.append('teaching_intensity', teachingIntensity);
+        }
+        if (explanationVoice) {
+            formData.append('explanation_voice', explanationVoice);
         }
 
         const response = await fetch(`${API_BASE}/conversation/synthesize`, {
@@ -190,12 +233,20 @@ export class API {
     /**
      * Complete conversation: send audio, get text response
      */
-    static async speakAndRespond(audioBlob, language, difficulty, scenario, sessionId = null) {
+    static async speakAndRespond(
+        audioBlob,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        sessionId = null
+    ) {
         const formData = new FormData();
         formData.append('audio', audioBlob, 'recording.wav');
         formData.append('language', language);
         formData.append('difficulty', difficulty);
         formData.append('scenario', scenario);
+        formData.append('teaching_intensity', teachingIntensity);
         if (sessionId) {
             formData.append('session_id', sessionId);
         }
@@ -218,6 +269,7 @@ export class API {
      * @param {string} language - Target language
      * @param {string} difficulty - Difficulty level
      * @param {string} scenario - Conversation scenario
+     * @param {string} teachingIntensity - Teaching intensity
      * @param {string|null} sessionId - Session ID
      * @param {Object} callbacks - Event callbacks
      * @param {Function} callbacks.onTranscription - Called with transcription result
@@ -226,12 +278,21 @@ export class API {
      * @param {Function} callbacks.onComplete - Called with full response
      * @param {Function} callbacks.onError - Called on error
      */
-    static async speakAndRespondStream(audioBlob, language, difficulty, scenario, sessionId = null, callbacks = {}) {
+    static async speakAndRespondStream(
+        audioBlob,
+        language,
+        difficulty,
+        scenario,
+        teachingIntensity = 'standard',
+        sessionId = null,
+        callbacks = {}
+    ) {
         const formData = new FormData();
         formData.append('audio', audioBlob, 'recording.wav');
         formData.append('language', language);
         formData.append('difficulty', difficulty);
         formData.append('scenario', scenario);
+        formData.append('teaching_intensity', teachingIntensity);
         if (sessionId) {
             formData.append('session_id', sessionId);
         }
